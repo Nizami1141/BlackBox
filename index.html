@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Мониторинг</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --text:#1c1e21; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb;
+          --ok:#16a34a; --off:#9ca3af; --warn:#d97706; --err:#dc2626; --sel:#eff6ff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --card:#181b22; --text:#e6e8eb; --muted:#8b93a1; --line:#2a2f3a; --accent:#60a5fa; --sel:#1e2a44; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:12px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:17px; margin:0; flex:1; }
+  header .sum { color:var(--muted); }
+  .layout { display:grid; grid-template-columns:320px 1fr; height:calc(100vh - 50px); }
+  aside { overflow-y:auto; border-right:1px solid var(--line); background:var(--card); }
+  .search { padding:10px; position:sticky; top:0; background:var(--card); border-bottom:1px solid var(--line); }
+  input, select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  .region { padding:10px 14px 4px; font-size:12px; font-weight:600; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
+  .dev { padding:10px 14px; cursor:pointer; display:flex; align-items:center; gap:10px; border-left:3px solid transparent; }
+  .dev:hover { background:var(--bg); }
+  .dev.sel { background:var(--sel); border-left-color:var(--accent); }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--off); flex:none; }
+  .dot.online { background:var(--ok); box-shadow:0 0 0 3px rgba(22,163,74,.2); }
+  .dev .n { flex:1; min-width:0; }
+  .dev .n b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dev .n small { color:var(--muted); }
+  .badge { background:var(--err); color:#fff; border-radius:10px; padding:1px 7px; font-size:12px; }
+  main { overflow-y:auto; padding:20px; }
+  .empty { color:var(--muted); text-align:center; margin-top:80px; }
+  .info { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .info h2 { margin:0 0 10px; font-size:18px; display:flex; align-items:center; gap:10px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .grid div span { display:block; color:var(--muted); font-size:12px; }
+  .bar { display:flex; gap:10px; margin-bottom:10px; }
+  .bar select { width:180px; } .bar input { flex:1; }
+  .logs { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .log { display:grid; grid-template-columns:150px 60px 1fr; gap:10px; padding:7px 14px; border-bottom:1px solid var(--line);
+         font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
+  .log:last-child { border:0; }
+  .log .t { color:var(--muted); } .log .m { white-space:pre-wrap; word-break:break-word; }
+  .lvl { font-weight:700; text-transform:uppercase; font-size:12px; }
+  .lvl.info { color:var(--accent); } .lvl.debug { color:var(--muted); } .lvl.warn { color:var(--warn); } .lvl.error { color:var(--err); }
+  .log.error { background:rgba(220,38,38,.07); } .log.warn { background:rgba(217,119,6,.07); }
+  @media (max-width:760px) { .layout { grid-template-columns:1fr; height:auto; } aside { max-height:40vh; } .log { grid-template-columns:1fr; gap:2px; } }
+</style>
+</head>
+<body>
+<header><h1>ESP32 Мониторинг</h1><span class="sum" id="sum"></span></header>
+<div class="layout">
+  <aside>
+    <div class="search"><input id="search" placeholder="Поиск устройства или региона..."></div>
+    <div id="list"></div>
+  </aside>
+  <main id="main"><div class="empty">Выберите устройство слева, чтобы увидеть его логи</div></main>
+</div>
+
+<script>
+let devices = [], selected = null, level = '', q = '';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path) {
+  const key = localStorage.getItem('adminKey') || '';
+  let res = await fetch(path, { headers: key ? { 'X-Admin-Key': key } : {} });
+  if (res.status === 401) {
+    const k = prompt('Введите ключ доступа (ADMIN_API_KEY):');
+    if (!k) throw new Error('no key');
+    localStorage.setItem('adminKey', k);
+    res = await fetch(path, { headers: { 'X-Admin-Key': k } });
+    if (res.status === 401) { localStorage.removeItem('adminKey'); throw new Error('bad key'); }
+  }
+  return res.json();
+}
+
+function ago(iso) {
+  if (!iso) return 'нет данных';
+  const s = Math.round((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return s + ' с назад';
+  if (s < 3600) return Math.floor(s / 60) + ' мин назад';
+  if (s < 86400) return Math.floor(s / 3600) + ' ч назад';
+  return Math.floor(s / 86400) + ' дн назад';
+}
+
+async function loadDevices() {
+  devices = await api('/api/v1/devices');
+  const on = devices.filter(d => d.status === 'online').length;
+  $('sum').textContent = `${on} из ${devices.length} онлайн`;
+  renderList();
+  if (selected) renderInfo();
+}
+
+function renderList() {
+  const f = $('search').value.trim().toLowerCase();
+  const byRegion = {};
+  devices.filter(d => !f || (d.device_id + ' ' + (d.name || '') + ' ' + d.region).toLowerCase().includes(f))
+         .forEach(d => (byRegion[d.region] ||= []).push(d));
+  $('list').innerHTML = Object.keys(byRegion).sort().map(r =>
+    `<div class="region">${esc(r)}</div>` + byRegion[r].map(d => `
+      <div class="dev ${d.device_id === selected ? 'sel' : ''}" data-id="${esc(d.device_id)}">
+        <span class="dot ${esc(d.status)}"></span>
+        <div class="n"><b>${esc(d.name || d.device_id)}</b><small>${esc(d.device_id)} · ${ago(d.last_seen)}</small></div>
+        ${d.errors_24h ? `<span class="badge" title="Ошибок за 24 ч">${d.errors_24h}</span>` : ''}
+      </div>`).join('')
+  ).join('') || '<div class="empty">Устройств нет</div>';
+}
+
+$('list').addEventListener('click', e => {
+  const el = e.target.closest('.dev'); if (!el) return;
+  selected = el.dataset.id; level = ''; q = '';
+  renderMain(); renderList(); loadLogs();
+});
+$('search').addEventListener('input', renderList);
+
+function renderMain() {
+  $('main').innerHTML = `
+    <div class="info" id="info"></div>
+    <div class="bar">
+      <select id="level"><option value="">Все уровни</option><option value="warn">Warn и выше</option><option value="error">Только Error</option></select>
+      <input id="q" placeholder="Поиск по тексту логов...">
+    </div>
+    <div class="logs" id="logs"></div>`;
+  $('level').onchange = e => { level = e.target.value; loadLogs(); };
+  let t; $('q').oninput = e => { q = e.target.value; clearTimeout(t); t = setTimeout(loadLogs, 300); };
+  renderInfo();
+}
+
+function renderInfo() {
+  const d = devices.find(x => x.device_id === selected); if (!d || !$('info')) return;
+  $('info').innerHTML = `
+    <h2><span class="dot ${esc(d.status)}"></span>${esc(d.name || d.device_id)}</h2>
+    <div class="grid">
+      <div><span>ID</span>${esc(d.device_id)}</div>
+      <div><span>Регион</span>${esc(d.region)}</div>
+      <div><span>Статус</span>${d.status === 'online' ? 'Онлайн' : d.status === 'offline' ? 'Офлайн' : 'Не выходил на связь'}</div>
+      <div><span>Последняя связь</span>${ago(d.last_seen)}</div>
+      <div><span>IP</span>${esc(d.ip || '—')}</div>
+      <div><span>Прошивка</span>${esc(d.fw_version || '—')}</div>
+      <div><span>Всего логов</span>${d.log_count}</div>
+    </div>`;
+}
+
+async function loadLogs() {
+  if (!selected) return;
+  const p = new URLSearchParams({ device_id: selected, limit: 200 });
+  if (level) p.set('level', level);
+  if (q) p.set('q', q);
+  const logs = await api('/api/v1/logs?' + p);
+  if (!$('logs')) return;
+  $('logs').innerHTML = logs.map(l => `
+    <div class="log ${esc(l.level)}">
+      <span class="t">${new Date(l.received_at).toLocaleString('ru-RU')}</span>
+      <span class="lvl ${esc(l.level)}">${esc(l.level)}</span>
+      <span class="m">${esc(l.message)}</span>
+    </div>`).join('') || '<div class="empty" style="margin:30px">Логов пока нет</div>';
+}
+
+loadDevices().catch(console.error);
+setInterval(() => { loadDevices().catch(() => {}); loadLogs().catch(() => {}); }, 5000);
+</script>
+</body>
+</html>
