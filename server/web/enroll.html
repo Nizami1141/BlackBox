@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Регистрация сотрудников</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+
+<header>
+    <div class="brand">Таможенный контроль · регистрация</div>
+    <nav>
+        <a href="/">Проверка</a>
+        <a href="/enroll" class="active">Регистрация</a>
+        <a href="/journal">Журнал</a>
+        <a href="/selftest">Проверка сервера</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="chip"><span class="dot" id="dot"></span><span id="devtext">…</span></div>
+</header>
+
+<main>
+    <div class="grid side">
+
+        <!-- ------------------------------------------------------- анкета -->
+        <div class="panel">
+            <h2>Новый сотрудник</h2>
+
+            <label for="employee_no">Табельный номер</label>
+            <input type="text" id="employee_no" placeholder="например 10427" autocomplete="off">
+
+            <label for="full_name">Фамилия, имя, отчество</label>
+            <input type="text" id="full_name" placeholder="Алиев Рашад Немятович" autocomplete="off">
+
+            <label for="position">Должность</label>
+            <input type="text" id="position" placeholder="инспектор" autocomplete="off">
+
+            <label for="department">Подразделение</label>
+            <input type="text" id="department" placeholder="КПП Астара" autocomplete="off">
+
+            <button class="primary" id="btnSave" style="width:100%;margin-top:20px">
+                Сохранить сотрудника
+            </button>
+            <p class="hint">
+                Нужно от 3 снимков. Разные ракурсы и разное освещение дают
+                заметно более устойчивый эталон, чем три одинаковых кадра
+                подряд.
+            </p>
+
+            <div class="warnbox">
+                Снимки сделаны веб-камерой, а опознавать сотрудника будет
+                камера поста. Это разная оптика, и схожесть у одного и того же
+                человека получится ниже, чем при съёмке одной камерой.
+                Если начнутся ложные отказы — добавьте сотруднику 2–3 кадра
+                уже с поста кнопкой «Добавить снимки» в списке ниже,
+                это правильнее, чем опускать порог для всех.
+            </div>
+        </div>
+
+        <!-- ------------------------------------------------------- снимки -->
+        <div>
+            <div class="panel">
+                <h2>Снимки</h2>
+                <div class="grid two">
+                    <div>
+                        <video id="cam" autoplay playsinline muted></video>
+                        <div class="row" style="margin-top:12px">
+                            <button id="btnCam" class="fixed">Включить камеру</button>
+                            <button id="btnShot" class="primary fixed" disabled>Снять кадр</button>
+                            <select id="camList" style="min-width:140px"></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="files">…или загрузить файлы</label>
+                        <input type="file" id="files" accept="image/*" multiple>
+                        <p class="hint">
+                            JPEG или PNG, до 4 МБ каждый, не больше 12 штук за раз.
+                            Лицо должно занимать хотя бы 80 пикселей по меньшей
+                            стороне — иначе вектор получится мусорным, и сервер
+                            такой кадр отклонит.
+                        </p>
+                        <div class="shots" id="shots"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Сотрудники в базе</h2>
+                <table>
+                    <thead>
+                        <tr><th></th><th>Табельный</th><th>ФИО</th><th>Должность</th>
+                            <th class="num">Снимков</th><th></th></tr>
+                    </thead>
+                    <tbody id="employees"><tr><td colspan="6">загрузка…</td></tr></tbody>
+                </table>
+                <input type="file" id="addFiles" accept="image/*" multiple hidden>
+            </div>
+        </div>
+
+    </div>
+</main>
+
+<div id="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/enroll.js"></script>
+</body>
+</html>

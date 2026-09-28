@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тест ESP32 API — Таможенный контроль</title>
+<link rel="stylesheet" href="/assets/style.css">
+<style>
+/* Стили только этой страницы. Всё общее берётся из style.css. */
+
+/* Выбор источника кадра — три равноправных способа, а не «главный и прочие» */
+.sources { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@media (max-width: 720px) { .sources { grid-template-columns: 1fr; } }
+.src {
+    padding: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+}
+.src:hover { border-color: var(--accent); }
+.src.on { border-color: var(--accent); color: var(--text); background: rgba(74,158,255,.10); }
+.src b { display: block; font-size: 14px; color: var(--text); margin-bottom: 3px; }
+
+/* Область, куда можно бросить файл */
+.drop {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 26px 16px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+}
+.drop.over { border-color: var(--accent); background: rgba(74,158,255,.06); }
+
+/* Пошаговый разбор запроса: каждый шаг со своим итогом */
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps li {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 10px;
+    align-items: baseline;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.steps li:last-child { border-bottom: none; }
+.steps .n { color: var(--muted); font-family: "Consolas", monospace; font-size: 12px; }
+.steps .what { color: var(--text); }
+.steps .what small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+.steps .res { font-family: "Consolas", monospace; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.steps li.ok  .res { color: var(--ok); }
+.steps li.bad .res { color: var(--err); }
+.steps li.idle { opacity: .45; }
+
+/* Экран поста 16x2 — показываем ровно то, что увидит человек у камеры */
+.lcd {
+    background: #0d2b16;
+    border: 1px solid #1c4c2a;
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: "Consolas", monospace;
+    font-size: 17px;
+    line-height: 1.6;
+    color: #7df3a4;
+    letter-spacing: 1px;
+    white-space: pre;
+    min-height: 74px;
+}
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: "Consolas", monospace; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="brand">Таможенный контроль · пост</div>
+    <nav>
+        <a href="/">Проверка</a>
+        <a href="/enroll">Регистрация</a>
+        <a href="/journal">Журнал</a>
+        <a href="/selftest" class="active">Проверка сервера</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="chip"><span class="dot" id="dot"></span><span id="devtext">подключаюсь…</span></div>
+</header>
+
+<main>
+    <div class="panel">
+        <h1>Тест ESP32 ↔ W5500 ↔ сервер</h1>
+        <p class="hint">
+            Страница делает запросы точно по контракту ESP32: multipart-кадр на
+            <code>/api/recognize</code>, затем <code>log_id</code> и штрихкод на
+            <code>/api/log_cargo</code>, оба с заголовком <code>X-API-Key</code>.
+            Разница одна: кадр можно взять не с камеры поста.
+        </p>
+        <p class="hint" style="margin-top:10px">
+            Зачем это нужно. Когда пост отвечает <b>NO_FACE</b>, виноватых двое — сервер и кадр.
+            Подсуньте заведомо хорошее фото: опознал — сервер исправен и разбираться надо
+            с камерой; не опознал — дело в базе, пороге или модели, и камера ни при чём.
+        </p>
+    </div>
+
+    <div class="grid side" style="margin-top:20px">
+
+        <!-- ------------------------------------------------- левая колонка -->
+        <div>
+            <div class="panel">
+                <h2>1. Откуда взять кадр</h2>
+                <div class="sources">
+                    <div class="src on" data-src="file"><b>Файл</b>с диска</div>
+                    <div class="src" data-src="cam"><b>Веб-камера</b>ноутбука</div>
+                    <div class="src" data-src="post"><b>С поста</b>последний кадр</div>
+                </div>
+
+                <div id="paneFile" style="margin-top:14px">
+                    <div class="drop" id="drop">
+                        Перетащите сюда JPEG или <a href="#" id="pick">выберите файл</a>
+                    </div>
+                    <input type="file" id="file" accept="image/*" hidden>
+                </div>
+
+                <div id="paneCam" style="margin-top:14px; display:none">
+                    <video id="video" autoplay playsinline muted></video>
+                    <div class="row" style="margin-top:10px">
+                        <button id="btnCamStart">Включить камеру</button>
+                        <button id="btnSnap" disabled>Снять кадр</button>
+                    </div>
+                </div>
+
+                <div id="panePost" style="margin-top:14px">
+                    <p class="hint" style="margin:0 0 10px">
+                        Последний кадр, который прислала плата. Живёт в памяти сервера
+                        до следующей проверки — на диск не пишется, это биометрия.
+                    </p>
+                    <button id="btnPull">Забрать кадр с поста</button>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>2. Устройство</h2>
+                <label for="device">Пост</label>
+                <select id="device"></select>
+
+                <label for="key">X-API-Key</label>
+                <input type="password" id="key" placeholder="ключ из ETH_API_KEY"
+                       autocomplete="off" spellcheck="false">
+                <p class="hint">
+                    Возьмите его из <code>ETH_API_KEY</code> в прошивке. Ошибка ключа
+                    даёт HTTP 401; IP вне белого списка — HTTP 403.
+                </p>
+
+                <label for="barcode">Штрихкод груза (необязательно)</label>
+                <input type="text" id="barcode" placeholder="TRK4417AZ"
+                       autocomplete="off" spellcheck="false">
+                <p class="hint">
+                    Отправится только после успешного опознания: без токена сервер
+                    такой скан отвергнет. Это и есть главная гарантия системы.
+                </p>
+
+                <button class="big primary" id="btnRun" style="margin-top:16px" disabled>
+                    ОТПРАВИТЬ КАК ПОСТ
+                </button>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Состояние сервера</h2>
+                <dl class="kv" id="health"><dt>—</dt><dd>загружаю…</dd></dl>
+                <div class="warnbox" id="network" style="margin-top:12px"></div>
+                <div class="warnbox" id="emptyBase" style="display:none">
+                    В базе нет ни одного сотрудника. Любой кадр получит отказ, и это
+                    не поломка — сначала заведите человека на странице
+                    <a href="/enroll">Регистрация</a>.
+                </div>
+            </div>
+        </div>
+
+        <!-- ------------------------------------------------- правая колонка -->
+        <div>
+            <div class="grid two">
+                <div class="frame" id="frame">кадр появится здесь</div>
+                <div class="verdict" id="verdict">
+                    <div class="who">Готов</div>
+                    <div class="meta">Выберите кадр и нажмите «Отправить как пост»</div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Что произошло по шагам</h2>
+                <ul class="steps" id="steps">
+                    <li class="idle" data-step="pick">
+                        <span class="n">1</span>
+                        <span class="what">Кадр выбран
+                            <small>проверяется, что это действительно JPEG</small></span>
+                        <span class="res">—</span>
+                    </li>
+                    <li class="idle" data-step="auth">
+                        <span class="n">2</span>
+                        <span class="what">API-ключ и IP приняты
+                            <small>401 — неверный X-API-Key, 403 — IP не в whitelist</small></span>
+                        <span class="res">—</span>
+                    </li>
+                    <li class="idle" data-step="face">
+                        <span class="n">3</span>
+                        <span class="what">Лицо найдено в кадре
+                            <small>здесь и получается NO_FACE, если кадр негодный</small></span>
+                        <span class="res">—</span>
+                    </li>
+                    <li class="idle" data-step="match">
+                        <span class="n">4</span>
+                        <span class="what">Сотрудник опознан
+                            <small>сравнение вектора с базой по порогу</small></span>
+                        <span class="res">—</span>
+                    </li>
+                    <li class="idle" data-step="token">
+                        <span class="n">5</span>
+                        <span class="what">Выдан log_id
+                            <small>на сервере он связан с защищённой одноразовой сессией</small></span>
+                        <span class="res">—</span>
+                    </li>
+                    <li class="idle" data-step="scan">
+                        <span class="n">6</span>
+                        <span class="what">Штрихкод записан в журнал
+                            <small>сервер проверяет токен и привязку к посту</small></span>
+                        <span class="res">—</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="grid two" style="margin-top:20px">
+                <div class="panel">
+                    <h2>Экран поста</h2>
+                    <div class="lcd" id="lcd">
+                </div>
+                    <p class="hint">Ровно то, что увидел бы человек у камеры.</p>
+                </div>
+                <div class="panel">
+                    <h2>Похожие в базе</h2>
+                    <table><tbody id="cands"><tr><td>—</td></tr></tbody></table>
+                    <p class="hint">Оператору видно, кто оказался ближе всего и насколько.</p>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Журнал событий</h2>
+                <div class="log" id="log"></div>
+            </div>
+        </div>
+
+    </div>
+</main>
+
+<div id="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/selftest.js"></script>
+</body>
+</html>

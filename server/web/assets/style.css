@@ -1,0 +1,255 @@
+/* ==========================================================================
+   Общие стили пульта.
+
+   Тёмная тема выбрана не для красоты: пульт стоит в помещении поста, часто
+   при плохом свете и всю смену перед глазами одного человека. Светлый фон
+   на большом мониторе в такой ситуации утомляет заметно быстрее.
+
+   Никаких внешних шрифтов и библиотек: сервер работает офлайн, и страница
+   не должна ждать интернет, которого на посту может не быть.
+   ========================================================================== */
+
+:root {
+    --bg:        #12141a;
+    --panel:     #1b1e26;
+    --panel-2:   #232833;
+    --border:    #333a48;
+    --text:      #e8ebf0;
+    --muted:     #8d97a8;
+    --accent:    #4a9eff;
+    --ok:        #35c07e;
+    --warn:      #e2b33c;
+    --err:       #e5544b;
+    --radius:    10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ------------------------------------------------------------------ шапка */
+header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 14px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+header .brand { font-weight: 600; font-size: 16px; letter-spacing: .2px; }
+header nav { display: flex; gap: 18px; }
+header nav a { color: var(--muted); padding: 4px 0; }
+header nav a.active { color: var(--text); border-bottom: 2px solid var(--accent); }
+header .spacer { flex: 1; }
+
+/* Индикатор связи с постом. Красный/зелёный кружок — первое, на что смотрит
+   оператор, когда «кнопка не работает». */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err); }
+.dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(53,192,126,.6); }
+
+main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+}
+
+.grid { display: grid; gap: 20px; }
+.grid.two { grid-template-columns: 1fr 1fr; }
+.grid.side { grid-template-columns: 380px 1fr; }
+@media (max-width: 900px) {
+    .grid.two, .grid.side { grid-template-columns: 1fr; }
+}
+
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 0 0 14px; color: var(--muted); font-weight: 600;
+     text-transform: uppercase; letter-spacing: .6px; }
+p.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+
+/* ---------------------------------------------------------------- кнопки */
+button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #06121f;
+                 font-weight: 600; }
+button.danger  { color: var(--err); }
+button.big {
+    width: 100%;
+    padding: 26px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: .4px;
+}
+
+/* ------------------------------------------------------- ход проверки */
+.stages { list-style: none; margin: 0; padding: 0; }
+.stages li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    color: var(--muted);
+    border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.stages li:last-child { border-bottom: none; }
+.stages .mark {
+    width: 20px; height: 20px; flex: none;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: grid; place-items: center;
+    font-size: 11px;
+}
+.stages li.done   { color: var(--text); }
+.stages li.done   .mark { border-color: var(--ok); color: var(--ok); }
+.stages li.active { color: var(--text); }
+.stages li.active .mark { border-color: var(--accent); border-right-color: transparent;
+                          animation: spin 1s linear infinite; }
+.stages li.fail   { color: var(--err); }
+.stages li.fail   .mark { border-color: var(--err); color: var(--err); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* -------------------------------------------------------------- вердикт */
+.verdict {
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+}
+.verdict.ok   { border-color: var(--ok);   background: rgba(53,192,126,.08); }
+.verdict.bad  { border-color: var(--err);  background: rgba(229,84,75,.08); }
+.verdict.wait { border-color: var(--warn); background: rgba(226,179,60,.08); }
+.verdict .who  { font-size: 22px; font-weight: 600; }
+.verdict .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.verdict .code { font-size: 26px; font-family: "Consolas", monospace;
+                 letter-spacing: 1px; margin-top: 10px; }
+
+.frame {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #0b0d12 center/contain no-repeat;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: grid; place-items: center;
+    color: var(--muted); font-size: 13px;
+    overflow: hidden;
+}
+.frame img { width: 100%; height: 100%; object-fit: contain; }
+
+/* --------------------------------------------------------------- формы */
+label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+input[type=text], input[type=search], select {
+    width: 100%;
+    padding: 9px 11px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font: inherit;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+.row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.row > * { flex: 1; }
+.row > .fixed { flex: none; }
+
+/* ------------------------------------------------------- снимки в enroll */
+.shots { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.shot {
+    position: relative;
+    width: 104px; height: 78px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: #0b0d12;
+}
+.shot img { width: 100%; height: 100%; object-fit: cover; }
+.shot button {
+    position: absolute; top: 3px; right: 3px;
+    padding: 0; width: 20px; height: 20px; line-height: 1;
+    border-radius: 50%; background: rgba(0,0,0,.65); font-size: 13px;
+}
+.shot.bad { border-color: var(--err); }
+
+video { width: 100%; border-radius: var(--radius); background: #0b0d12;
+        aspect-ratio: 4 / 3; object-fit: cover; }
+
+/* -------------------------------------------------------------- таблица */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; font-size: 12px;
+     text-transform: uppercase; letter-spacing: .5px; }
+tbody tr:hover { background: rgba(255,255,255,.025); }
+td.mono { font-family: "Consolas", monospace; }
+td.num  { text-align: right; }
+
+.tag { display: inline-block; padding: 2px 8px; border-radius: 12px;
+       font-size: 12px; background: var(--panel-2); color: var(--muted); }
+.tag.ok  { color: var(--ok);  background: rgba(53,192,126,.12); }
+.tag.bad { color: var(--err); background: rgba(229,84,75,.12); }
+
+/* ----------------------------------------------------------- уведомления */
+#toasts { position: fixed; right: 20px; bottom: 20px; display: flex;
+          flex-direction: column; gap: 10px; z-index: 100; max-width: 380px; }
+.toast {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.toast.err { border-left-color: var(--err); }
+.toast.ok  { border-left-color: var(--ok); }
+
+.log {
+    font-family: "Consolas", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.6;
+}
+
+.warnbox {
+    border: 1px solid var(--warn);
+    background: rgba(226,179,60,.08);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-top: 14px;
+}

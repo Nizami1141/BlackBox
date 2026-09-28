@@ -1,0 +1,14 @@
+# Данные и модели наружу не выкладываем: в базе лежат биометрические
+# персональные данные, а модели весят сотни мегабайт и качаются скриптом.
+server/data/
+server/models/
+server/.venv/
+__pycache__/
+*.pyc
+firmware/.pio/
+.vscode/
+
+.pytest_cache/
+*/.pytest_cache/
+__pycache__/
+*.pyc

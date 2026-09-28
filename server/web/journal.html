@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Журнал проверок</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+
+<header>
+    <div class="brand">Таможенный контроль · журнал</div>
+    <nav>
+        <a href="/">Проверка</a>
+        <a href="/enroll">Регистрация</a>
+        <a href="/journal" class="active">Журнал</a>
+        <a href="/selftest">Проверка сервера</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="chip"><span class="dot" id="dot"></span><span id="devtext">…</span></div>
+</header>
+
+<main>
+    <div class="panel">
+        <h2>Кто какой груз проверил</h2>
+        <div class="row">
+            <div>
+                <label for="fBarcode">Штрихкод содержит</label>
+                <input type="search" id="fBarcode" placeholder="часть кода">
+            </div>
+            <div>
+                <label for="fEmployee">Сотрудник</label>
+                <select id="fEmployee"><option value="">все</option></select>
+            </div>
+            <div class="fixed">
+                <label for="fLimit">Показать</label>
+                <select id="fLimit">
+                    <option>100</option><option selected>200</option>
+                    <option>1000</option><option>5000</option>
+                </select>
+            </div>
+            <div class="fixed">
+                <button id="btnReload">Обновить</button>
+            </div>
+            <div class="fixed">
+                <a href="/api/web/journal.csv"><button>Выгрузить CSV</button></a>
+            </div>
+        </div>
+
+        <table style="margin-top:18px">
+            <thead>
+                <tr>
+                    <th>№</th><th>Дата и время</th><th>Табельный</th><th>Сотрудник</th>
+                    <th>Штрихкод груза</th><th>Пост</th><th class="num">Схожесть</th>
+                </tr>
+            </thead>
+            <tbody id="rows"><tr><td colspan="7">загрузка…</td></tr></tbody>
+        </table>
+        <p class="hint" id="count"></p>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+        <h2>Попытки распознавания, включая неудачные</h2>
+        <p class="hint" style="margin-bottom:12px">
+            Сюда попадает каждый кадр, ушедший на опознание. Нужно, чтобы
+            разбирать жалобы «меня не узнаёт»: видно и схожесть, и причину
+            отказа по каждой попытке.
+        </p>
+        <table>
+            <thead>
+                <tr><th>Время</th><th>Пост</th><th>Итог</th><th>Кто</th>
+                    <th class="num">Схожесть</th><th>Причина</th><th class="num">мс</th></tr>
+            </thead>
+            <tbody id="vrows"><tr><td colspan="7">—</td></tr></tbody>
+        </table>
+    </div>
+</main>
+
+<div id="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/journal.js"></script>
+</body>
+</html>
