@@ -39,6 +39,9 @@ bool health(String &out);
 // Полностью локальная команда с сайта ноутбука. Возвращает true только когда
 // сервер выдал этому посту ожидающий запрос на одну проверку.
 bool takeRemoteTrigger();
+// Connectivity report to the main server and Device Registry.
+bool heartbeat();
+void registryLog(const char *level, const char *message);
 
 // Отправка кадра на /api/recognize (multipart/form-data)
 VerifyResult verify(const uint8_t *jpeg, size_t len);

@@ -33,6 +33,7 @@ import socket
 import threading
 import time
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from typing import Optional
 
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
@@ -47,6 +48,7 @@ from core.events import BUS, EV_SCAN, EV_VERIFY, Event
 from core.face_engine import FaceError
 from core.flow import CheckpointFlow, _short_name
 from core.service import CheckpointService
+from core.system_monitor import SystemMonitor
 from link import LinkError
 from link.ws_link import WsLink
 
@@ -92,11 +94,17 @@ def create_app(service: CheckpointService, flow: CheckpointFlow,
     async def lifespan(app: FastAPI):
         hub.bind_loop(asyncio.get_running_loop())
         await registry.start_all()
+        monitor = SystemMonitor(service.db, cfg.devices,
+                                cfg.data_dir / "system_status.txt")
+        monitor_task = asyncio.create_task(monitor.run())
         log.info("Транспорты подняты: %s",
                  ", ".join(f"{l.device_id}({l.kind})" for l in registry.all()) or "нет")
         try:
             yield
         finally:
+            monitor_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await monitor_task
             await registry.stop_all()
 
     app = FastAPI(title="Customs Checkpoint", version=API_VERSION,
@@ -896,6 +904,10 @@ def create_app(service: CheckpointService, flow: CheckpointFlow,
             "liveness": service.cfg.liveness_enabled,
             "liveness_authority": "central_aks" if central_aks else "local",
         }
+
+    @app.post("/api/esp/heartbeat")
+    def esp_heartbeat(device_id: str = Depends(aks_auth)):
+        return {"ok": True, "device_id": device_id}
 
     @app.post("/api/v1/verify")
     async def verify(request: Request, device_id: str = Depends(device_auth)):

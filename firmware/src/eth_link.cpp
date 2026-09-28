@@ -463,6 +463,107 @@ bool takeRemoteTrigger() {
     return payload["check"] == true;
 }
 
+#if REGISTRY_ENABLED
+static bool g_registryRegistered = false;
+struct RegistryEvent {
+    const char *level;
+    const char *message;
+    uint32_t uptimeMs;
+};
+static RegistryEvent g_registryEvents[8];
+static uint8_t g_registryEventCount = 0;
+
+void registryLog(const char *level, const char *message) {
+    if (g_registryEventCount == 8) {
+        for (uint8_t i = 1; i < 8; ++i) g_registryEvents[i - 1] = g_registryEvents[i];
+        --g_registryEventCount;
+    }
+    g_registryEvents[g_registryEventCount++] = {level, message, millis()};
+}
+
+static int registryPost(const String &path, const String &json) {
+    EthernetClient c;
+    if (!c.connect(REGISTRY_HOST, REGISTRY_PORT)) return 0;
+    String headers = "POST " + path + " HTTP/1.1\r\nHost: " REGISTRY_HOST;
+    headers += ":" + String(REGISTRY_PORT) + "\r\nX-API-Key: " REGISTRY_API_KEY;
+    headers += "\r\nContent-Type: application/json\r\nContent-Length: ";
+    headers += String(json.length()) + "\r\nConnection: close\r\n\r\n";
+    if (c.print(headers) != headers.length() || c.print(json) != json.length()) {
+        c.stop();
+        return 0;
+    }
+    int code = 0;
+    String body;
+    const bool got = readResponse(c, code, body, 1000);
+    c.stop();
+    return got ? code : 0;
+}
+
+static void registryHeartbeat() {
+    if (!g_registryRegistered) {
+        JsonDocument registration;
+        registration["device_id"] = CHECKPOINT_DEVICE_ID;
+        registration["region"] = REGISTRY_REGION;
+        registration["name"] = REGISTRY_NAME;
+        String json;
+        serializeJson(registration, json);
+        g_registryRegistered = registryPost("/api/v1/devices/register", json) == 200;
+        if (!g_registryRegistered) return;
+        registryLog("info", "ESP32-S3 registered after boot");
+    }
+
+    JsonDocument heartbeatBody;
+    heartbeatBody["ip"] = localIP();
+    heartbeatBody["fw_version"] = REGISTRY_FW_VERSION;
+    String json;
+    serializeJson(heartbeatBody, json);
+    const int code = registryPost(String("/api/v1/devices/") +
+                                  CHECKPOINT_DEVICE_ID + "/heartbeat", json);
+    if (code == 404) g_registryRegistered = false;
+    if (code != 200 || g_registryEventCount == 0) return;
+
+    JsonDocument logs;
+    JsonArray events = logs["logs"].to<JsonArray>();
+    for (uint8_t i = 0; i < g_registryEventCount; ++i) {
+        JsonObject event = events.add<JsonObject>();
+        event["level"] = g_registryEvents[i].level;
+        event["message"] = g_registryEvents[i].message;
+        event["uptime_ms"] = g_registryEvents[i].uptimeMs;
+    }
+    json = "";
+    serializeJson(logs, json);
+    if (registryPost(String("/api/v1/devices/") + CHECKPOINT_DEVICE_ID +
+                     "/logs", json) == 200) {
+        g_registryEventCount = 0;
+    }
+}
+#else
+void registryLog(const char *, const char *) {}
+#endif
+
+bool heartbeat() {
+    if (!linkUp()) return false;
+    EthernetClient c;
+    bool mainOk = false;
+    if (c.connect(ETH_SERVER_HOST, ETH_SERVER_PORT)) {
+        if (sendHeaders(c, "/api/esp/heartbeat", "application/json", 0)) {
+            int code = 0;
+            String body;
+            const bool got = readResponse(c, code, body, 1000);
+            mainOk = got && code == 200;
+        }
+        c.stop();
+    }
+#if REGISTRY_ENABLED
+    static uint32_t lastRegistryMs = 0;
+    if (!lastRegistryMs || millis() - lastRegistryMs >= 30000) {
+        lastRegistryMs = millis();
+        registryHeartbeat();
+    }
+#endif
+    return mainOk;
+}
+
 }  // namespace eth
 
 #endif  // ENABLE_ETH

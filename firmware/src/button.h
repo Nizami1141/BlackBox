@@ -34,6 +34,9 @@ void begin(int pin, bool activeLow = true);
 // Вызывать часто (из основной задачи). Возвращает true ОДИН раз на нажатие.
 bool pressed();
 
+// Timestamped debounced press edge, retained while network calls block loop().
+bool pressedAt(uint32_t &timeMs);
+
 // То же для длинного удержания. Короткое нажатие при этом не засчитывается:
 // иначе одно удержание давало бы и отмену, и новую проверку.
 bool longPressed();

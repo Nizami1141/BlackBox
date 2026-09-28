@@ -559,6 +559,13 @@
 // Адрес НОУТБУКА, на котором запущен app.py. Порт — тот же, что у сайта.
 #define ETH_SERVER_HOST  "172.16.6.51"
 #define ETH_SERVER_PORT  8000
+#define REGISTRY_ENABLED 1
+#define REGISTRY_HOST ETH_SERVER_HOST
+#define REGISTRY_PORT 8001
+#define REGISTRY_API_KEY ETH_API_KEY
+#define REGISTRY_REGION "Astara"
+#define REGISTRY_NAME "GATE-01"
+#define REGISTRY_FW_VERSION "blackbox-yusif"
 // Ключ X-API-Key из server/config.yaml, секция aks_api.
 #define ETH_API_KEY      "Mass23e34rTYUm__55!QAAzxs"
 // MAC-адрес. Любой уникальный в вашей сети; первый байт чётный

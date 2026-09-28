@@ -313,6 +313,14 @@ def _aks_recognize(client, image=None, key=AKS_KEY):
     )
 
 
+def test_esp_heartbeat_requires_aks_key(client):
+    assert client.post("/api/esp/heartbeat").status_code == 401
+    response = client.post("/api/esp/heartbeat",
+                           headers={"X-API-Key": AKS_KEY})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "device_id": "GATE-01"}
+
+
 def test_aks_api_rejects_missing_and_wrong_key(client):
     assert _aks_recognize(client, key="").status_code == 401
     assert _aks_recognize(client, key="wrong").status_code == 401

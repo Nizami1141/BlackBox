@@ -20,7 +20,33 @@ uint32_t g_records = 0;
 uint32_t g_lastLinkCheck = 0;
 bool     g_lastLinkUp = true;
 uint32_t g_lastCheckEnd = 0;      // когда закончилась последняя проверка
+uint32_t g_lastHeartbeat = 0;
+uint32_t g_lastPhysicalPress = 0;
+constexpr uint32_t HEARTBEAT_MS = 3000;
+constexpr uint32_t DOUBLE_PRESS_MS = 2000;
 bool     g_backlightOn = true;
+
+void checkDoublePress() {
+#if ENABLE_BUTTON
+    uint32_t pressedAt = 0;
+    while (btn::pressedAt(pressedAt)) {
+        if (g_lastPhysicalPress &&
+            pressedAt - g_lastPhysicalPress <= DOUBLE_PRESS_MS) {
+            Serial.println("[cp] двойное нажатие — перезагрузка ESP");
+            Serial.flush();
+            ESP.restart();
+        }
+        g_lastPhysicalPress = pressedAt;
+    }
+#endif
+}
+
+void heartbeatIfDue() {
+    const uint32_t now = millis();
+    if (now - g_lastHeartbeat < HEARTBEAT_MS) return;
+    g_lastHeartbeat = now;
+    if (!eth::asleep()) eth::heartbeat();
+}
 
 // ------------------------------------------------------------- подсветка ---
 // Экран — единственный узел, который человек видит до того, как система
@@ -139,6 +165,8 @@ String waitBarcode(uint32_t windowMs) {
     uint32_t rearmMs = millis();
 #endif
     while (millis() - t0 < windowMs) {
+        checkDoublePress();
+        heartbeatIfDue();
         String s;
         if (g_scanner->poll(s)) {
             s.trim();
@@ -218,6 +246,8 @@ String waitBarcode(uint32_t windowMs) {
 // Подсветку здесь НЕ трогаем: на экране висит вердикт, и человек его ещё
 // читает. Её погасит loop() через LCD_BACKLIGHT_OFF_MS.
 void toIdle() {
+    checkDoublePress();
+    heartbeatIfDue();
 #if CAM_OFF_AFTER_CHECK && !INTERBOARD_GATEWAY
     cam::off();
 #endif
@@ -231,6 +261,7 @@ void toIdle() {
 // ------------------------------------------------------------ один проход
 void runCheck() {
     g_checks++;
+    eth::registryLog("info", "Verification started");
     Serial.printf("\n[cp] === проверка #%lu ===\n", (unsigned long)g_checks);
 
     // === ЭТАП 1: экран ======================================================
@@ -313,6 +344,7 @@ void runCheck() {
     free(jpg);                      // кадр больше не нужен, PSRAM освобождаем сразу
 
     if (!v.ok) {
+        eth::registryLog("error", "Recognition request failed");
         Serial.printf("[cp] связь с сервером: %s\n", v.error.c_str());
         showFor(LCD_NOLINK_1, LCD_NOLINK_2, LCD_HOLD_MS);
         toIdle();
@@ -320,6 +352,7 @@ void runCheck() {
     }
 
     if (!v.matched) {
+        eth::registryLog("info", "Face not recognized");
         Serial.printf("[cp] отказ: %s (схожесть %.3f)\n",
                       v.reason.c_str(), v.score);
         // На экране — только вердикт. Ни оценки схожести, ни имён похожих:
@@ -350,6 +383,7 @@ void runCheck() {
     // waitBarcode сам будит сканер, ждёт код и усыпляет его обратно.
     String code = waitBarcode(window);
     if (code.length() == 0) {
+        eth::registryLog("warn", "Barcode missing or canceled");
         Serial.println("[cp] штрихкод не поднесли");
         showFor(LCD_ERR_1, "Vaxt bitdi", LCD_HOLD_MS);
         toIdle();
@@ -374,6 +408,7 @@ void runCheck() {
     }
 
     if (!s.ok) {
+        eth::registryLog("error", "Barcode recording failed");
         Serial.printf("[cp] не записано: %s %s\n",
                       s.reason.c_str(), s.error.c_str());
         showFor(pick(s.lcd1, LCD_ERR_1), pick(s.lcd2, s.reason.c_str()),
@@ -383,6 +418,7 @@ void runCheck() {
     }
 
     g_records++;
+    eth::registryLog("info", "Barcode record saved");
     Serial.printf("[cp] запись №%d\n", s.recordId);
     showFor(pick(s.lcd1, LCD_SAVED_1), pick(s.lcd2, code.c_str()), LCD_HOLD_MS);
     toIdle();
@@ -394,6 +430,7 @@ namespace checkpoint {
 
 void begin(GM67 *scanner) {
     g_scanner = scanner;
+    g_lastHeartbeat = millis() - HEARTBEAT_MS;
 
     if (!eth::begin()) {
         show(LCD_NOLINK_1, LCD_NOLINK_2);
@@ -440,6 +477,7 @@ void begin(GM67 *scanner) {
 
 void loop() {
     static uint32_t lastRemotePoll = 0;
+    checkDoublePress();
     // ------------------------------------------------------- подсветка ----
     // Гасим не сразу после проверки, а спустя LCD_BACKLIGHT_OFF_MS: вердикт
     // висит на экране LCD_HOLD_MS, и погасить раньше значило бы не дать
@@ -498,6 +536,7 @@ void loop() {
 #if ENABLE_LCD
     lcd::tick(LCD_IDLE_1, LCD_IDLE_2);
 #endif
+    heartbeatIfDue();
 
     bool buttonRequested = false;
 #if ENABLE_BUTTON

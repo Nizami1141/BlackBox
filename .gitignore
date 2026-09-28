@@ -6,6 +6,9 @@ server/.venv/
 __pycache__/
 *.pyc
 firmware/.pio/
+registry/*.db
+registry/*.db-*
+registry/.venv/
 .vscode/
 
 .pytest_cache/
