@@ -89,6 +89,8 @@ void applySensorSettings() {
     if (!s) return;
     s->set_hmirror(s, CAM_HMIRROR);
     s->set_vflip(s, CAM_VFLIP);
+    Serial.printf("[cam] ориентация: hmirror=%d, vflip=%d\n",
+                  CAM_HMIRROR, CAM_VFLIP);
 }
 
 bool driverInit() {
