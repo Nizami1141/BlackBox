@@ -443,6 +443,10 @@ VerifyResult verify(const uint8_t *jpeg, size_t len) {
         recognitionError(r, body, "сервер не подтвердил распознавание: status != success");
         return r;
     }
+    // HTTP 200 can still be a denial. Keep the actual upstream verdict
+    // visible instead of diagnosing it from our fallback LCD text.
+    Serial.print("[eth] AKS response: ");
+    Serial.println(safeDiagnostic(body));
     JsonArray faces = doc["faces"].as<JsonArray>();
     // The live AKS returns HTTP 200 with faces:[] when no face is detected.
     // Accept that denial, but never accept multiple faces or a malformed match.
@@ -468,6 +472,7 @@ VerifyResult verify(const uint8_t *jpeg, size_t len) {
         recognitionError(r, body, "сервер не выдал действительный log_id");
         return r;
     }
+    logf_("[eth] AKS faces_count=%u\n", (unsigned)faces.size());
     if (faces[0]["match"].as<bool>()) {
         JsonVariantConst user = faces[0]["user"];
         if (!user["first_name"].is<const char *>() ||

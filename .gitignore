@@ -6,6 +6,7 @@ server/.venv/
 __pycache__/
 *.pyc
 firmware/.pio/
+aks_debug_photos/
 registry/*.db
 registry/*.db-*
 registry/.venv/

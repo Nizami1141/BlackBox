@@ -25,6 +25,7 @@ uint32_t g_lastPhysicalPress = 0;
 constexpr uint32_t HEARTBEAT_MS = 3000;
 constexpr uint32_t DOUBLE_PRESS_MS = 2000;
 bool     g_backlightOn = true;
+bool     g_exportNextFrame = false;
 
 void checkDoublePress() {
 #if ENABLE_BUTTON
@@ -260,6 +261,8 @@ void toIdle() {
 
 // ------------------------------------------------------------ один проход
 void runCheck() {
+    const bool exportFrame = g_exportNextFrame;
+    g_exportNextFrame = false;
     g_checks++;
     eth::registryLog("info", "Verification started");
     Serial.printf("\n[cp] === проверка #%lu ===\n", (unsigned long)g_checks);
@@ -324,6 +327,14 @@ void runCheck() {
         return;
     }
     Serial.printf("[cp] кадр %ux%u, %u байт\n", w, h, (unsigned)len);
+    if (exportFrame) {
+        // Explicit COM diagnostic only: export the same bytes that verify()
+        // sends to AKS. No new capture and no local recognition involved.
+        Serial.printf("JPEG_BEGIN %u %u %u\n", (unsigned)len, w, h);
+        Serial.write(jpg, len);
+        Serial.flush();
+        Serial.println("\nJPEG_END");
+    }
 
     // === ЭТАП 4: отправка кадра и ожидание ответа ===========================
     show(LCD_SEARCH_1, LCD_SEARCH_2);
@@ -489,6 +500,23 @@ void begin(GM67 *scanner) {
 void loop() {
     static uint32_t lastRemotePoll = 0;
     checkDoublePress();
+    static String serialCommand;
+    while (Serial.available()) {
+        const char ch = (char)Serial.read();
+        if (ch == '\n') {
+            serialCommand.trim();
+            const bool debugCheck = serialCommand == "DEBUG_CHECK";
+            serialCommand = "";
+            if (debugCheck) {
+                g_exportNextFrame = true;
+                runCheck();
+                return;
+            }
+        } else if (ch != '\r') {
+            if (serialCommand.length() < 32) serialCommand += ch;
+            else serialCommand = "";
+        }
+    }
     // ------------------------------------------------------- подсветка ----
     // Гасим не сразу после проверки, а спустя LCD_BACKLIGHT_OFF_MS: вердикт
     // висит на экране LCD_HOLD_MS, и погасить раньше значило бы не дать
