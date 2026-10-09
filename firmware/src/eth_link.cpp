@@ -468,6 +468,22 @@ VerifyResult verify(const uint8_t *jpeg, size_t len) {
         recognitionError(r, body, "сервер не выдал действительный log_id");
         return r;
     }
+    if (faces[0]["match"].as<bool>()) {
+        JsonVariantConst user = faces[0]["user"];
+        if (!user["first_name"].is<const char *>() ||
+            !user["last_name"].is<const char *>()) {
+            recognitionError(r, body, "AKS не вернул имя и фамилию сотрудника");
+            return r;
+        }
+        String firstName = user["first_name"].as<const char *>();
+        String lastName = user["last_name"].as<const char *>();
+        firstName.trim();
+        lastName.trim();
+        if (!firstName.length() || !lastName.length()) {
+            recognitionError(r, body, "AKS вернул пустое имя или фамилию сотрудника");
+            return r;
+        }
+    }
     r.ok = true;
     if (faces.size() > 0) {
         JsonObject f0 = faces[0];
