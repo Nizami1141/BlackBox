@@ -758,12 +758,14 @@ def create_app(service: CheckpointService, flow: CheckpointFlow,
             "expires_in": r.expires_in if r.matched else 0,
         }
         if r.matched:
-            names = r.full_name.strip().split(maxsplit=1)
+            # Enrollment form stores Фамилия Имя Отчество. The AKS wire
+            # contract returns given name first and surname separately.
+            names = r.full_name.strip().split()
             face["user"] = {
                 "id": r.employee_id,
                 "qr_id": r.employee_no,
-                "first_name": names[0] if names else "",
-                "last_name": names[1] if len(names) > 1 else "",
+                "first_name": names[1] if len(names) > 1 else (names[0] if names else ""),
+                "last_name": names[0] if names else "",
             }
         else:
             messages = {

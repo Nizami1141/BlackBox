@@ -66,12 +66,29 @@ def test_central_client_reports_whitelist_failure(monkeypatch):
     assert exc.value.upstream_status == 403
 
 
+def test_central_client_rejects_match_without_name_and_surname(monkeypatch):
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={
+        "status": "success", "faces": [{
+            "match": True, "log_id": 145,
+            "user": {"first_name": "Elnur"},
+        }],
+    }))
+    monkeypatch.setattr(upstream_mod.httpx, "AsyncClient",
+                        lambda **kwargs: original(transport=transport, **kwargs))
+    client = upstream_mod.CentralAksClient("http://192.168.250.106/api", "secret", 10)
+    with pytest.raises(upstream_mod.CentralAksError) as exc:
+        asyncio.run(client.recognize(b"jpeg"))
+    assert exc.value.reason == "CENTRAL_INVALID_MATCH_DATA"
+
+
 @pytest.fixture()
 def central_test_client(monkeypatch, tmp_path):
     monkeypatch.setattr(service_mod, "FaceEngine", StubEngine)
 
     class FakeAks:
         fail = False
+        deny = False
         scanned = []
 
         def __init__(self, *args):
@@ -80,6 +97,10 @@ def central_test_client(monkeypatch, tmp_path):
         async def recognize(self, jpeg):
             if self.fail:
                 raise upstream_mod.CentralAksError(502, "CENTRAL_UNREACHABLE")
+            if self.deny:
+                return {"status": "success", "faces": [{
+                    "match": False, "message": "Tanınmadı",
+                }]}
             return {"status": "success", "faces": [{
                 "match": True, "log_id": 145,
                 "user": {"id": 999, "qr_id": "3633",
@@ -147,3 +168,15 @@ def test_central_failure_is_not_local_fallback(central_test_client):
     response = _recognize(client)
     assert response.status_code == 502
     assert response.json()["reason"] == "CENTRAL_UNREACHABLE"
+
+
+def test_central_region_denial_cannot_advance_to_cargo(central_test_client):
+    client, fake, _ = central_test_client
+    fake.deny = True
+    response = _recognize(client)
+    assert response.status_code == 200, response.text
+    assert response.json()["faces"] == [{"match": False, "message": "Tanınmadı"}]
+    cargo = client.post("/api/log_cargo", headers={"X-API-Key": "local-key"},
+                        data={"log_id": "145", "cargo_barcode": "TR-DENIED"})
+    assert cargo.status_code == 409
+    assert fake.scanned == []

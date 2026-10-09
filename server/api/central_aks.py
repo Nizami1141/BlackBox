@@ -80,7 +80,10 @@ class CentralAksClient:
             user = face.get("user")
             if (type(log_id) is not int or log_id <= 0
                     or not isinstance(user, dict)
-                    or not isinstance(user.get("first_name"), str)):
+                    or not isinstance(user.get("first_name"), str)
+                    or not user["first_name"].strip()
+                    or not isinstance(user.get("last_name"), str)
+                    or not user["last_name"].strip()):
                 raise CentralAksError(502, "CENTRAL_INVALID_MATCH_DATA")
         return result
 

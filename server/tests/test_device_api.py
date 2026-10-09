@@ -333,6 +333,8 @@ def test_aks_api_full_pass_uses_numeric_log_id(client):
     assert face["match"] is True
     assert isinstance(face["log_id"], int) and face["log_id"] > 0
     assert face["user"]["qr_id"] == "100"
+    assert face["user"]["first_name"] == "Rəşad"
+    assert face["user"]["last_name"] == "Əliyev"
 
     cargo = client.post(
         "/api/log_cargo",
