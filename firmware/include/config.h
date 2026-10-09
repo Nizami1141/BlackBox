@@ -536,50 +536,86 @@
 #endif
 
 // ---------------------------------------------------------------------------
-//  АДРЕСА. Кабель идёт напрямую плата <-> ноутбук, роутера между ними нет.
-//
-//  Для тестового прямого соединения используются статические адреса:
-//
-//      ноутбук       172.16.6.51  (сервер FastAPI, порт 8000)
-//      ESP32 + W5500 172.16.6.52  (клиент)
-//      маска         255.255.255.0
-//
-//  Шлюз и DNS для прямого кабеля не нужны. Оба адреса обязаны оставаться
-//  в одной подсети, иначе даже ARP-пакеты не дойдут до второго устройства.
-//
-//  ЕСЛИ АДРЕС НОУТБУКА ИЗМЕНИТСЯ (выключили ICS, переткнули в роутер) —
-//  посмотрите ipconfig и поправьте ETH_SERVER_HOST, ETH_STATIC_IP
-//  и ETH_GATEWAY под ту подсеть, которую показал ipconfig.
-//
-//  Если позже появится роутер: воткнуть оба конца в роутер, поставить
-//  ETH_USE_STATIC 0 (роутер раздаст адрес сам), а в ETH_SERVER_HOST вписать
-//  тот адрес, который роутер выдал ноутбуку (ipconfig -> IPv4-адрес).
+//  СЕТЬ: 1 = W5500 подключён к общей сети и обращается прямо в AKS.
+//  0 = прежний стенд: прямой кабель к ноутбуку с app.py на порту 8000.
+//  Центральный адрес и порт взяты из docs/esp32.html, не из IP ноутбука.
+//  На центральном AKS нет локальных /api/device/trigger и heartbeat API,
+//  поэтому они, как и Device Registry, в прямом режиме выключены.
 // ---------------------------------------------------------------------------
-
-// Адрес НОУТБУКА, на котором запущен app.py. Порт — тот же, что у сайта.
-#define ETH_SERVER_HOST  "172.16.6.51"
-#define ETH_SERVER_PORT  8000
-#define REGISTRY_ENABLED 1
+#ifndef ETH_DIRECT_AKS
+  #define ETH_DIRECT_AKS 1
+#endif
+#ifndef ETH_SERVER_HOST
+  #if ETH_DIRECT_AKS
+    #define ETH_SERVER_HOST "aks.customs.gov.az"
+  #else
+    #define ETH_SERVER_HOST "172.16.6.51"
+  #endif
+#endif
+#ifndef ETH_SERVER_PORT
+  #if ETH_DIRECT_AKS
+    #define ETH_SERVER_PORT 443
+  #else
+    #define ETH_SERVER_PORT 8000
+  #endif
+#endif
+#ifndef ETH_SERVER_TLS
+  #define ETH_SERVER_TLS ETH_DIRECT_AKS
+#endif
+#if ETH_DIRECT_AKS && !ETH_SERVER_TLS
+  #error "Central AKS requires HTTPS; enable ETH_SERVER_TLS."
+#endif
+// Development mode from the 30.09.2026 contract: encrypted TLS without
+// certificate validation. To pin the server certificate, set this to 0 and
+// supply ETH_TLS_FINGERPRINT (SHA-1 fingerprint from the administrator).
+#ifndef ETH_TLS_INSECURE
+  #define ETH_TLS_INSECURE 1
+#endif
+#if ETH_SERVER_TLS && !ETH_TLS_INSECURE && !defined(ETH_TLS_FINGERPRINT)
+  #error "Set ETH_TLS_FINGERPRINT when disabling development TLS mode."
+#endif
+#ifndef REGISTRY_ENABLED
+  #define REGISTRY_ENABLED (!ETH_DIRECT_AKS)
+#endif
+#if ETH_DIRECT_AKS && REGISTRY_ENABLED
+  #error "Device Registry is a laptop API; disable it for direct AKS mode."
+#endif
 #define REGISTRY_HOST ETH_SERVER_HOST
 #define REGISTRY_PORT 8001
 #define REGISTRY_API_KEY ETH_API_KEY
 #define REGISTRY_REGION "Astara"
 #define REGISTRY_NAME "GATE-01"
 #define REGISTRY_FW_VERSION "blackbox-yusif"
-// Ключ X-API-Key из server/config.yaml, секция aks_api.
+// Ключ X-API-Key из docs/esp32.html; в стенде совпадает с aks_api.api_key.
 #define ETH_API_KEY      "Mass23e34rTYUm__55!QAAzxs"
 // MAC-адрес. Любой уникальный в вашей сети; первый байт чётный
 // (не групповой) и с установленным битом «локально администрируемый».
 #define ETH_MAC          {0x02, 0x47, 0x41, 0x54, 0x45, 0x01}
-// 0 = получить адрес по DHCP. 1 = взять фиксированный из ETH_STATIC_IP.
-// При прямом кабеле DHCP взяться неоткуда — здесь обязательна 1.
-#define ETH_USE_STATIC   1
+// Общая сеть: для этой платы администратором назначен статический
+// адрес 172.16.6.52. Маска и шлюз должны соответствовать общей сети.
+// ETH_USE_STATIC=0 переключает адресацию на DHCP при необходимости.
+#ifndef ETH_USE_STATIC
+  #define ETH_USE_STATIC 1
+#endif
 #define ETH_STATIC_IP    {172, 16, 6, 52}
-// Шлюза в прямом соединении нет. Значение всё равно нужно библиотеке,
-// но в дело оно не идёт: ноутбук в той же подсети, пакеты уходят к нему
-// напрямую через ARP, мимо шлюза.
-#define ETH_GATEWAY      {172, 16, 6, 51}
-#define ETH_SUBNET       {255, 255, 255, 0}
+// Эти значения используются только при ETH_USE_STATIC=1. В общей сети
+// применены параметры Ethernet ноутбука (172.16.6.54/16):
+// маска 255.255.0.0, шлюз 172.16.0.1. Шлюз должен быть в подсети платы.
+#if ETH_DIRECT_AKS
+  #define ETH_GATEWAY    {172, 16, 0, 1}
+  #define ETH_SUBNET     {255, 255, 0, 0}
+#else
+  #define ETH_GATEWAY    {172, 16, 6, 51}
+  #define ETH_SUBNET     {255, 255, 255, 0}
+#endif
+// DNS общей сети AKS, указанный владельцем сети.
+#ifndef ETH_DNS
+  #if ETH_DIRECT_AKS
+    #define ETH_DNS {192, 168, 250, 248}
+  #else
+    #define ETH_DNS ETH_GATEWAY
+  #endif
+#endif
 
 // ===========================================================================
 //  ПИТАНИЕ И НАГРЕВ

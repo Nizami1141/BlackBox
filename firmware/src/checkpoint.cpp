@@ -345,8 +345,9 @@ void runCheck() {
 
     if (!v.ok) {
         eth::registryLog("error", "Recognition request failed");
-        Serial.printf("[cp] связь с сервером: %s\n", v.error.c_str());
-        showFor(LCD_NOLINK_1, LCD_NOLINK_2, LCD_HOLD_MS);
+        Serial.printf("[cp] проверка не завершена (HTTP %d): %s\n",
+                      v.httpCode, v.error.c_str());
+        showFor(pick(v.lcd1, LCD_ERR_1), pick(v.lcd2, "Sistem xetasi"), LCD_HOLD_MS);
         toIdle();
         return;
     }
@@ -394,6 +395,10 @@ void runCheck() {
     // === ЭТАП 7: отправка штрихкода =========================================
     eth::ScanResult s = eth::scan(v.token, code);
 
+    // У центрального API не документирована идемпотентность записи груза:
+    // потерянный ответ мог означать уже выполненную запись. Автоматический
+    // повтор оставляем только для локального сервера с защитой сессии.
+#if !ETH_DIRECT_AKS
     // Тот же повтор при сетевом сбое, что и у verify — штрихкод уже прочитан,
     // человек своё дело сделал, и терять его скан из-за моргнувшего линка
     // обидно вдвойне. Повторять безопасно: если сервер УСПЕЛ записать, а
@@ -406,6 +411,7 @@ void runCheck() {
         while (millis() - t0 < 4000 && !eth::linkUp()) delay(100);
         if (eth::linkUp()) s = eth::scan(v.token, code);
     }
+#endif
 
     if (!s.ok) {
         eth::registryLog("error", "Barcode recording failed");
@@ -442,9 +448,14 @@ void begin(GM67 *scanner) {
         } else {
             Serial.printf("[cp] ВНИМАНИЕ: сеть есть, но сервер молчит: %s\n",
                           info.c_str());
-            Serial.printf("       Проверьте адрес %s:%d в config.h и что "
-                          "на ноутбуке запущен app.py\n",
+            Serial.printf("       Проверьте адрес %s:%d, IP платы, маску, шлюз и DNS.\n",
                           ETH_SERVER_HOST, ETH_SERVER_PORT);
+#if ETH_DIRECT_AKS
+            Serial.println("       Плата обращается прямо в AKS: нужен маршрут "
+                           "из общей сети к этому серверу. app.py не требуется.");
+#else
+            Serial.println("       На ноутбуке должен быть запущен app.py.");
+#endif
         }
     }
 

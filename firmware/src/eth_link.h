@@ -39,7 +39,8 @@ bool health(String &out);
 // Полностью локальная команда с сайта ноутбука. Возвращает true только когда
 // сервер выдал этому посту ожидающий запрос на одну проверку.
 bool takeRemoteTrigger();
-// Connectivity report to the main server and Device Registry.
+// Laptop mode: heartbeat to the local server and Device Registry.
+// Direct AKS mode: DHCP maintenance only; no undocumented HTTP endpoints.
 bool heartbeat();
 void registryLog(const char *level, const char *message);
 
