@@ -547,25 +547,41 @@
 #ifndef ETH_DIRECT_AKS
   #define ETH_DIRECT_AKS 1
 #endif
+// Явный выбор внутреннего HTTP API из задания от 08.10.2026.
+// Фото и X-API-Key передаются без TLS; автоматического переключения нет.
+#ifndef ETH_AKS_HTTP
+  #define ETH_AKS_HTTP 0
+#endif
 #ifndef ETH_SERVER_HOST
   #if ETH_DIRECT_AKS
-    #define ETH_SERVER_HOST "aks.customs.gov.az"
+    #if ETH_AKS_HTTP
+      #define ETH_SERVER_HOST "192.168.250.106"
+    #else
+      #define ETH_SERVER_HOST "aks.customs.gov.az"
+    #endif
   #else
     #define ETH_SERVER_HOST "172.16.6.51"
   #endif
 #endif
 #ifndef ETH_SERVER_PORT
   #if ETH_DIRECT_AKS
-    #define ETH_SERVER_PORT 443
+    #if ETH_AKS_HTTP
+      #define ETH_SERVER_PORT 80
+    #else
+      #define ETH_SERVER_PORT 443
+    #endif
   #else
     #define ETH_SERVER_PORT 8000
   #endif
 #endif
 #ifndef ETH_SERVER_TLS
-  #define ETH_SERVER_TLS ETH_DIRECT_AKS
+  #define ETH_SERVER_TLS (ETH_DIRECT_AKS && !ETH_AKS_HTTP)
 #endif
-#if ETH_DIRECT_AKS && !ETH_SERVER_TLS
-  #error "Central AKS requires HTTPS; enable ETH_SERVER_TLS."
+#if ETH_DIRECT_AKS && !ETH_SERVER_TLS && !ETH_AKS_HTTP
+  #error "Select ETH_AKS_HTTP=1 for the documented internal HTTP API, or enable TLS."
+#endif
+#if ETH_DIRECT_AKS && ETH_AKS_HTTP && ETH_SERVER_TLS
+  #error "The documented internal HTTP API uses port 80 without TLS."
 #endif
 // Development mode from the 30.09.2026 contract: encrypted TLS without
 // certificate validation. To pin the server certificate, set this to 0 and
