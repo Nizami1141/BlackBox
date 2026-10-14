@@ -34,12 +34,17 @@ IP в таблице «Mövcud İP - Region». Флаг допускает со�
 
 ## Прошивка и проверка
 
-Из папки `firmware/` выполните, заменив COM9 своим портом:
+Основная сборка использует встроенный USB-Serial/JTAG ESP32-S3
+(`ARDUINO_USB_CDC_ON_BOOT=1`, сейчас COM3). Подключите кабель к встроенному
+USB разъёму платы. Для прежнего USB-UART/CH343 сохранена отдельная сборка
+`esp32s3cam_uart`.
+
+Из папки `firmware/` выполните, заменив COM3 своим портом:
 
 ```powershell
 pio device list
-pio run -e esp32s3cam -t upload --upload-port COM9
-pio device monitor -e esp32s3cam -p COM9 -b 115200 --rts 0 --dtr 0
+pio run -e esp32s3cam -t upload --upload-port COM3
+pio device monitor -e esp32s3cam -p COM3 -b 115200 --rts 0 --dtr 0
 ```
 
 При загрузке ожидается:
@@ -79,7 +84,7 @@ HTTP 401 — ключ не принят; HTTP 403 — IP отсутствует 
 перед камерой и из папки `firmware/` выполните:
 
 ```powershell
-python tools/aks_capture_check.py --port COM9
+python tools/aks_capture_check.py --port COM3
 ```
 
 Нужен Python с пакетом `pyserial` (он уже есть в Python PlatformIO).

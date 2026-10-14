@@ -396,6 +396,11 @@ void setup() {
     logf("\n\n=== Пост \"%s\": транспорт не выбран ===\n", CHECKPOINT_DEVICE_ID);
 #endif
     logf("[boot] сборка %s %s\n", __DATE__, __TIME__);
+#if ARDUINO_USB_CDC_ON_BOOT
+    logf("[boot] Serial: встроенный USB; DEBUG_CHECK через USB COM-порт\n");
+#else
+    logf("[boot] Serial: UART0/CH343; DEBUG_CHECK через USB-UART COM-порт\n");
+#endif
 
     // PSRAM обязательна. Если здесь 0 — почти наверняка неверный тип памяти
     // в platformio.ini (qio_opi для Octal против qio_qspi для Quad).
