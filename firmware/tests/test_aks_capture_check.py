@@ -34,13 +34,16 @@ class FakePort(io.BytesIO):
 
 
 class CaptureTest(unittest.TestCase):
-    def run_capture(self, payload, destination):
+    def run_capture(self, payload, destination, tls_only=False):
         port = FakePort(payload)
+        args = ["capture", "--port", "COM9", "--output", destination]
+        if tls_only:
+            args.append("--tls-only")
         with patch.object(capture.serial, "Serial", return_value=port), \
              patch.object(capture.time, "sleep"), \
-             patch("sys.argv", ["capture", "--port", "COM9", "--output", destination]):
+             patch("sys.argv", args):
             result = capture.main()
-        self.assertEqual(port.commands, [b"DEBUG_CHECK\n"])
+        self.assertEqual(port.commands, [b"DEBUG_TLS\n" if tls_only else b"DEBUG_CHECK\n"])
         return result
 
     def test_exports_exact_jpeg_and_aks_response(self):
@@ -67,6 +70,17 @@ class CaptureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as destination:
             with self.assertRaisesRegex(RuntimeError, "update the ESP32 firmware"):
                 self.run_capture(b"[eth] recognize: Uz tapilmadi\n", destination)
+
+    def test_tls_only_does_not_require_or_save_a_photo(self):
+        with tempfile.TemporaryDirectory() as destination:
+            self.assertEqual(self.run_capture(
+                b"[cp] TLS_END passed=5 total=5\n", destination, tls_only=True), 0)
+            self.assertEqual(list(Path(destination).glob("*.jpg")), [])
+
+    def test_tls_only_reports_intermittent_failure(self):
+        with tempfile.TemporaryDirectory() as destination:
+            self.assertEqual(self.run_capture(
+                b"[cp] TLS_END passed=3 total=5\n", destination, tls_only=True), 1)
 
 
 if __name__ == "__main__":

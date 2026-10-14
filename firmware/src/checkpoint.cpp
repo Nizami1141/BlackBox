@@ -512,7 +512,24 @@ void loop() {
         if (ch == '\n') {
             serialCommand.trim();
             const bool debugCheck = serialCommand == "DEBUG_CHECK";
+            const bool debugTls = serialCommand == "DEBUG_TLS";
             serialCommand = "";
+            if (debugTls) {
+                power::active();
+                Serial.println("[cp] TLS_BEGIN");
+                unsigned passed = 0;
+                for (unsigned i = 1; i <= 5; ++i) {
+                    String info;
+                    const bool ok = eth::health(info, true);
+                    if (ok) ++passed;
+                    Serial.printf("[cp] TLS_ATTEMPT %u %s %s\n", i,
+                                  ok ? "OK" : "FAIL", info.c_str());
+                    delay(500);
+                }
+                Serial.printf("[cp] TLS_END passed=%u total=5\n", passed);
+                power::idle();
+                return;
+            }
             if (debugCheck) {
                 g_exportNextFrame = true;
                 runCheck();

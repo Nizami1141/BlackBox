@@ -7,7 +7,7 @@
 #include <Ethernet.h>
 #include <Dns.h>
 #if ETH_SERVER_TLS
-#include <ESP_SSLClient.h>
+#include "w5500_tls_client.h"
 #endif
 #include <SPI.h>
 #include <stdarg.h>
@@ -106,7 +106,7 @@ void recognitionError(eth::VerifyResult &result, const String &body, const Strin
 struct ApiConnection {
     EthernetClient tcp;
 #if ETH_SERVER_TLS
-    ESP_SSLClient tls;
+    W5500TlsClient tls{tcp};
     Client &client = tls;
 #else
     Client &client = tcp;
@@ -115,19 +115,6 @@ struct ApiConnection {
 
     ApiConnection() {
         tcp.setConnectionTimeout(5000);
-#if ETH_SERVER_TLS
-        tls.setClient(&tcp);
-        // Keep a full TLS record: AKS need not support fragment negotiation.
-        tls.setBufferSizes(16384, 1024);
-        tls.setTimeout(HTTP_TIMEOUT_MS / 1000); // ESP_SSLClient takes seconds.
-        tls.setHandshakeTimeout(15);
-        tls.setSSLVersion(BR_TLS12, BR_TLS12);
-#if ETH_TLS_INSECURE
-        tls.setInsecure();
-#else
-        tls.setFingerprint(ETH_TLS_FINGERPRINT);
-#endif
-#endif
     }
     ~ApiConnection() { client.stop(); }
     ApiConnection(const ApiConnection &) = delete;
@@ -152,20 +139,26 @@ struct ApiConnection {
         logf_("[eth] соединение %s://%s:%d, IP=%s\n", API_SCHEME,
               ETH_SERVER_HOST, ETH_SERVER_PORT, resolved.toString().c_str());
         // Use the hostname for SNI even when DNS has already been checked.
-        if (!client.connect(ETH_SERVER_HOST, ETH_SERVER_PORT)) {
+        const bool connected =
+#if ETH_SERVER_TLS
+            tls.connect(ETH_SERVER_HOST, resolved, ETH_SERVER_PORT);
+#else
+            tcp.connect(resolved, ETH_SERVER_PORT);
+#endif
+        if (!connected) {
             error = String(ETH_SERVER_TLS ? "не удалось установить TCP/TLS с " :
                                           "не удалось установить TCP с ") +
                     ETH_SERVER_HOST + ":" + String(ETH_SERVER_PORT);
 #if ETH_SERVER_TLS
-            error += "; TLS error=" + String(tls.getLastSSLError());
+            error += "; mbedTLS error=" + String(tls.lastError()) + " " + tls.errorText();
 #endif
             logf_("[eth] %s\n", error.c_str());
             client.stop();
             return false;
         }
 #if ETH_SERVER_TLS
-        // Some ports in ESP_SSLClient start in plain mode. Never send a key
-        // or frame unless TLS is actually active, even after a config override.
+        Serial.println("[eth] TLS engine: ESP32 mbedTLS, TLS 1.2");
+        // Never send a key or frame before the TLS handshake succeeds.
         if (!tls.isSecure()) {
             error = "TLS не включён для выбранного порта; AKS требует 443";
             client.stop();
@@ -249,6 +242,9 @@ namespace eth {
 
 bool begin() {
     logf_("[eth] поднимаю W5500...\n");
+#ifdef ETH_SPI_CLOCK_HZ
+    logf_("[eth] SPI clock: %u Hz\n", (unsigned)ETH_SPI_CLOCK_HZ);
+#endif
     logf_("[eth] режим: %s, API: %s://%s:%d/api\n",
           ETH_DIRECT_AKS ? "прямой AKS" : "сервер ноутбука",
           API_SCHEME, ETH_SERVER_HOST, ETH_SERVER_PORT);
@@ -404,7 +400,7 @@ VerifyResult verify(const uint8_t *jpeg, size_t len) {
         r.error = "обрыв при отправке multipart кадра";
         return r;
     }
-    // ESP_SSLClient::flush() discards RX bytes, including fast replies.
+    // The TLS write is synchronous; leave any fast reply in its RX buffer.
 
     String body;
     if (!readResponse(c, r.httpCode, body, HTTP_TIMEOUT_MS, "/api/recognize")) {
@@ -608,7 +604,7 @@ ScanResult scan(const String &token, const String &barcode) {
 }
 
 // ---------------------------------------------------------------- health ---
-bool health(String &out) {
+bool health(String &out, bool httpProbe) {
     ApiConnection connection;
     if (!connection.connect()) {
         out = connection.error;
@@ -616,6 +612,23 @@ bool health(String &out) {
     }
     out = "хост " + String(ETH_SERVER_HOST) + ":" + String(ETH_SERVER_PORT) +
           (ETH_SERVER_TLS ? " доступен (TLS OK; авторизация ещё не проверена)" : " доступен (TCP OK)");
+    if (httpProbe) {
+        // Read-only round trip exercises encrypted writes AND reads. No
+        // API key, biometric image, recognition POST or cargo record involved.
+        const String request = String("GET /api/recognize HTTP/1.1\r\nHost: ") +
+            ETH_SERVER_HOST + "\r\nConnection: close\r\n\r\n";
+        if (!writeAll(connection.client, request)) {
+            out = "TLS HTTP probe: write failed";
+            return false;
+        }
+        int code = 0;
+        String body;
+        if (!readResponse(connection.client, code, body, 8000) || code < 100) {
+            out = "TLS HTTP probe: invalid or incomplete response";
+            return false;
+        }
+        out += "; read-only probe HTTP " + String(code);
+    }
     return true;
 }
 

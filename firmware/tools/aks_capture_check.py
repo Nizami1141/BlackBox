@@ -28,12 +28,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True, help="ESP32 COM port, e.g. COM9")
     parser.add_argument("--output", type=Path, default=Path("aks_debug_photos"))
+    parser.add_argument("--tls-only", action="store_true",
+                        help="Test five TLS/read-only GET round trips without a photo or API key")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     logs = []
     photo = None
-    print("Close Serial Monitor first. Stand in front of the camera.")
+    print("Close Serial Monitor first." +
+          (" Testing TLS with read-only GET; no photo or API key." if args.tls_only else
+           " Stand in front of the camera."))
     # Set modem lines before opening to avoid an unintended ESP32 reset.
     with serial.Serial(port=None, baudrate=115200, timeout=1, write_timeout=5) as port:
         port.dtr = False
@@ -42,9 +46,9 @@ def main() -> int:
         port.open()
         time.sleep(0.4)
         port.reset_input_buffer()
-        port.write(b"DEBUG_CHECK\n")
+        port.write(b"DEBUG_TLS\n" if args.tls_only else b"DEBUG_CHECK\n")
         port.flush()
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + (240 if args.tls_only else 120)
         try:
             while time.monotonic() < deadline:
                 line = port.readline().strip()
@@ -53,6 +57,8 @@ def main() -> int:
                 text = line.decode("utf-8", errors="replace")
                 print(text)
                 logs.append(text)
+                if args.tls_only and "[cp] TLS_END " in text:
+                    return 0 if "passed=5 total=5" in text else 1
                 if line.startswith(b"JPEG_BEGIN "):
                     fields = line.split()
                     if len(fields) != 4:

@@ -35,7 +35,7 @@ void sleep();
 bool wake();
 bool asleep();
 String localIP();
-bool health(String &out);
+bool health(String &out, bool httpProbe = false);
 // Полностью локальная команда с сайта ноутбука. Возвращает true только когда
 // сервер выдал этому посту ожидающий запрос на одну проверку.
 bool takeRemoteTrigger();
