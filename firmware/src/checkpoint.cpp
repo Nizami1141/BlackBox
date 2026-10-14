@@ -490,6 +490,12 @@ void begin(GM67 *scanner) {
     eth::sleep();
 #endif
     g_lastCheckEnd = millis();
+#if ENABLE_BUTTON
+    // Initialization can take seconds. GPIO activity accumulated during boot
+    // must not be interpreted as the user's restart command afterwards.
+    btn::resetPressHistory();
+    g_lastPhysicalPress = 0;
+#endif
 #if GM67_PASSIVE_UART_MODE
     Serial.println("[cp] покой: Ethernet активен, камера выключена; GM67 читает самостоятельно");
 #else

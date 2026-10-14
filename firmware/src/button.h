@@ -34,8 +34,10 @@ void begin(int pin, bool activeLow = true);
 // Вызывать часто (из основной задачи). Возвращает true ОДИН раз на нажатие.
 bool pressed();
 
-// Timestamped debounced press edge, retained while network calls block loop().
+// Completed debounced short press/release, retained while HTTP blocks loop().
 bool pressedAt(uint32_t &timeMs);
+// Discard startup noise and require a stable release before accepting presses.
+void resetPressHistory();
 
 // То же для длинного удержания. Короткое нажатие при этом не засчитывается:
 // иначе одно удержание давало бы и отмену, и новую проверку.

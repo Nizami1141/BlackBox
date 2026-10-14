@@ -1,30 +1,17 @@
 #include "button.h"
+#include "button_press_filter.h"
 
 namespace {
 
 const uint32_t DEBOUNCE_MS = 30;
 const uint32_t LONG_MS = 2000;
-const uint32_t EDGE_GUARD_MS = 180;
 constexpr uint8_t PRESS_QUEUE_SIZE = 8;
 portMUX_TYPE g_pressMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t g_pressTimes[PRESS_QUEUE_SIZE];
 volatile uint8_t g_pressHead = 0;
 volatile uint8_t g_pressTail = 0;
-volatile uint32_t g_lastEdgeMs = 0;
-
-void IRAM_ATTR onPressEdge() {
-    const uint32_t now = millis();
-    portENTER_CRITICAL_ISR(&g_pressMux);
-    if (now - g_lastEdgeMs >= EDGE_GUARD_MS) {
-        const uint8_t next = (g_pressHead + 1) % PRESS_QUEUE_SIZE;
-        if (next != g_pressTail) {
-            g_pressTimes[g_pressHead] = now;
-            g_pressHead = next;
-            g_lastEdgeMs = now;
-        }
-    }
-    portEXIT_CRITICAL_ISR(&g_pressMux);
-}
+uint32_t g_pressEpoch = 0;
+TaskHandle_t g_pressTask = nullptr;
 
 int      g_pin = -1;
 bool     g_activeLow = true;
@@ -38,6 +25,33 @@ bool     g_longFired = false;
 bool readRaw() {
     int v = digitalRead(g_pin);
     return g_activeLow ? (v == LOW) : (v == HIGH);
+}
+
+void pressTask(void *) {
+    ButtonPressFilter filter;
+    uint32_t epoch = UINT32_MAX;
+    for (;;) {
+        const uint32_t now = millis();
+        const bool down = readRaw();
+        portENTER_CRITICAL(&g_pressMux);
+        const uint32_t currentEpoch = g_pressEpoch;
+        portEXIT_CRITICAL(&g_pressMux);
+        if (epoch != currentEpoch) {
+            epoch = currentEpoch;
+            filter.reset(now, down);
+        }
+        uint32_t pressedAt = 0;
+        if (filter.sample(now, down, pressedAt)) {
+            portENTER_CRITICAL(&g_pressMux);
+            const uint8_t next = (g_pressHead + 1) % PRESS_QUEUE_SIZE;
+            if (epoch == g_pressEpoch && next != g_pressTail) {
+                g_pressTimes[g_pressHead] = pressedAt;
+                g_pressHead = next;
+            }
+            portEXIT_CRITICAL(&g_pressMux);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 void update() {
@@ -76,10 +90,20 @@ void begin(int pin, bool activeLow) {
     delay(5);
     g_raw = g_stable = readRaw();
     g_changedMs = millis();
+    resetPressHistory();
+    // Sampling continues while camera and HTTP calls block the main loop.
+    // Raw GPIO interrupt edges must never trigger a restart directly.
+    if (!g_pressTask && xTaskCreatePinnedToCore(
+            pressTask, "button-filter", 2048, nullptr, 1, &g_pressTask, 0) != pdPASS) {
+        Serial.println("[btn] фильтр не запущен: двойное нажатие отключено");
+    }
+}
+
+void resetPressHistory() {
+    portENTER_CRITICAL(&g_pressMux);
     g_pressHead = g_pressTail = 0;
-    g_lastEdgeMs = millis() - EDGE_GUARD_MS;
-    attachInterrupt(digitalPinToInterrupt(pin), onPressEdge,
-                    activeLow ? FALLING : RISING);
+    ++g_pressEpoch;
+    portEXIT_CRITICAL(&g_pressMux);
 }
 
 bool pressedAt(uint32_t &timeMs) {
