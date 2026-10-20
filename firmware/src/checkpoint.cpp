@@ -11,6 +11,7 @@
 #include "interboard_link.h"
 #include "lcd.h"
 #include "power.h"
+#include "audio_companion.h"
 
 namespace {
 
@@ -26,6 +27,7 @@ constexpr uint32_t HEARTBEAT_MS = 3000;
 constexpr uint32_t DOUBLE_PRESS_MS = 2000;
 bool     g_backlightOn = true;
 bool     g_exportNextFrame = false;
+bool     g_scanCanceled = false;
 
 void checkDoublePress() {
 #if ENABLE_BUTTON
@@ -105,6 +107,30 @@ String pick(const String &fromServer, const char *fallback) {
 // Перевзводим, только когда в приёмном тракте тихо: startDecode() чистит
 // буфер, и вызов посреди приходящего кода потерял бы этот код.
 String waitBarcode(uint32_t windowMs) {
+    g_scanCanceled = false;
+#if ENABLE_AUDIO_COMPANION
+    audio_companion::startScan(windowMs);
+    const uint32_t started = millis();
+    String code;
+    while (millis() - started < windowMs) {
+        checkDoublePress();
+        heartbeatIfDue();
+        if (audio_companion::pollBarcode(code)) break;
+#if ENABLE_BUTTON
+        if (btn::longPressed()) {
+            g_scanCanceled = true;
+            break;
+        }
+#endif
+        if (millis() - started >= 2000 && !audio_companion::scanLinkSeen()) {
+            Serial.println("[audio] scanner node not responding; check second ESP32 and UART wiring");
+            break;
+        }
+        delay(20);
+    }
+    audio_companion::stopScan();
+    return code;
+#else
     if (!g_scanner) return "";
 
 #if GM67_PASSIVE_UART_MODE
@@ -186,6 +212,7 @@ String waitBarcode(uint32_t windowMs) {
         // или поднёс не тот груз — он не должен ждать полминуты таймаута.
 #if ENABLE_BUTTON
         if (btn::longPressed()) {
+            g_scanCanceled = true;
             Serial.println("[cp] отмена длинным нажатием");
             break;
         }
@@ -238,6 +265,7 @@ String waitBarcode(uint32_t windowMs) {
 #endif
 #endif
     return code;
+#endif
 }
 
 // -------------------------------------------------------------- в покой ---
@@ -247,6 +275,7 @@ String waitBarcode(uint32_t windowMs) {
 // Подсветку здесь НЕ трогаем: на экране висит вердикт, и человек его ещё
 // читает. Её погасит loop() через LCD_BACKLIGHT_OFF_MS.
 void toIdle() {
+    audio_companion::stopScan();
     checkDoublePress();
     heartbeatIfDue();
 #if CAM_OFF_AFTER_CHECK && !INTERBOARD_GATEWAY
@@ -282,6 +311,7 @@ void runCheck() {
     lcd::resync();
 #endif
     show(LCD_WAIT_1, LCD_WAIT_2);
+    audio_companion::say(audio_wire::Prompt::LOOK);
 
     // === ЭТАП 2: сеть =======================================================
     // Будим ДО камеры: автопереговоры занимают секунду-три, и пусть они
@@ -289,6 +319,7 @@ void runCheck() {
     // после съёмки значило бы держать кадр в PSRAM и ждать впустую.
 #if ETH_SLEEP_IDLE
     if (!eth::wake()) {
+        audio_companion::say(audio_wire::Prompt::NETWORK_ERROR);
         showFor(LCD_NOLINK_1, LCD_NOLINK_2, LCD_HOLD_MS);
         toIdle();
         return;
@@ -314,6 +345,7 @@ void runCheck() {
     cam::off();
 #endif
     if (!jpg || len == 0) {
+        audio_companion::say(audio_wire::Prompt::SYSTEM_ERROR);
         Serial.println("[cp] не удалось получить кадр");
         showFor(LCD_ERR_1,
 #if INTERBOARD_GATEWAY
@@ -338,6 +370,7 @@ void runCheck() {
 
     // === ЭТАП 4: отправка кадра и ожидание ответа ===========================
     show(LCD_SEARCH_1, LCD_SEARCH_2);
+    audio_companion::say(audio_wire::Prompt::CHECKING);
     eth::VerifyResult v = eth::verify(jpg, len);
 
     // Одна повторная попытка при СЕТЕВОМ сбое. Зачем: на стенде линк может
@@ -355,6 +388,8 @@ void runCheck() {
     free(jpg);                      // кадр больше не нужен, PSRAM освобождаем сразу
 
     if (!v.ok) {
+        audio_companion::say(v.httpCode == 0 ? audio_wire::Prompt::NETWORK_ERROR :
+                                               audio_wire::Prompt::SYSTEM_ERROR);
         eth::registryLog("error", "Recognition request failed");
         Serial.printf("[cp] проверка не завершена (HTTP %d): %s\n",
                       v.httpCode, v.error.c_str());
@@ -364,6 +399,7 @@ void runCheck() {
     }
 
     if (!v.matched) {
+        audio_companion::say(audio_wire::Prompt::DENIED);
         eth::registryLog("info", "Face not recognized");
         Serial.printf("[cp] отказ: %s (схожесть %.3f)\n",
                       v.reason.c_str(), v.score);
@@ -383,6 +419,7 @@ void runCheck() {
     // раньше, чем увидит луч, иначе загоревшийся сканер выглядит как
     // случайность. Луч включается ТОЛЬКО после того, как сервер выдал токен.
     show(pick(v.lcd1, v.name.c_str()), pick(v.lcd2, LCD_OK_2));
+    audio_companion::say(audio_wire::Prompt::SCAN);
 
     // Ждать дольше, чем живёт токен, бессмысленно: сервер всё равно откажет.
     uint32_t window = GM67_SCAN_WINDOW_MS;
@@ -395,6 +432,9 @@ void runCheck() {
     // waitBarcode сам будит сканер, ждёт код и усыпляет его обратно.
     String code = waitBarcode(window);
     if (code.length() == 0) {
+        audio_companion::say(g_scanCanceled ? audio_wire::Prompt::CANCELED :
+            (ENABLE_AUDIO_COMPANION && !audio_companion::scanLinkSeen() ?
+                audio_wire::Prompt::SYSTEM_ERROR : audio_wire::Prompt::TIMEOUT));
         eth::registryLog("warn", "Barcode missing or canceled");
         Serial.println("[cp] штрихкод не поднесли");
         showFor(LCD_ERR_1, "Vaxt bitdi", LCD_HOLD_MS);
@@ -425,6 +465,8 @@ void runCheck() {
 #endif
 
     if (!s.ok) {
+        audio_companion::say(s.httpCode == 0 ? audio_wire::Prompt::NETWORK_ERROR :
+                                               audio_wire::Prompt::SYSTEM_ERROR);
         eth::registryLog("error", "Barcode recording failed");
         Serial.printf("[cp] не записано: %s %s\n",
                       s.reason.c_str(), s.error.c_str());
@@ -434,6 +476,7 @@ void runCheck() {
         return;
     }
 
+    audio_companion::say(audio_wire::Prompt::SAVED);
     g_records++;
     eth::registryLog("info", "Barcode record saved");
     Serial.printf("[cp] запись №%d\n", s.recordId);
@@ -446,6 +489,7 @@ void runCheck() {
 namespace checkpoint {
 
 void begin(GM67 *scanner) {
+    audio_companion::begin();
     g_scanner = scanner;
     g_lastHeartbeat = millis() - HEARTBEAT_MS;
 
