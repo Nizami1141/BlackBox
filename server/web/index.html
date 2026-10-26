@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пост — Таможенный контроль</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+
+<header>
+    <div class="brand">Таможенный контроль · пост</div>
+    <nav>
+        <a href="/" class="active">Проверка</a>
+        <a href="/enroll">Регистрация</a>
+        <a href="/journal">Журнал</a>
+        <a href="/selftest">Проверка сервера</a>
+        <a href="http://localhost:8001/" target="_blank" rel="noopener">Device Registry</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="chip"><span class="dot" id="dot"></span><span id="devtext">подключаюсь…</span></div>
+</header>
+
+<main>
+    <div class="grid side">
+
+        <!-- ---------------------------------------------------- левая колонка -->
+        <div>
+            <div class="panel">
+                <h2>Проверка сотрудника</h2>
+                <button class="big primary" id="btnCheck">ПРОВЕРИТЬ</button>
+                <p class="hint">
+                    Сотрудник смотрит в камеру поста. Нажмите «ПРОВЕРИТЬ» здесь
+                    или физическую кнопку на посту.
+                    Сканер штрихкодов включится сам — только после того,
+                    как лицо будет опознано.
+                </p>
+
+                <div class="row" style="margin-top:14px">
+                    <select id="device" class="fixed" style="min-width:180px"></select>
+                    <button id="btnCancel" class="fixed" disabled>Отмена</button>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Связь по Ethernet</h2>
+                <div id="linkStatus">загружаю…</div>
+                <p class="hint" style="margin-top:12px">
+                    Пост опрашивает сервер по Ethernet. Кнопка на сайте
+                    отправляет команду при доступной связи; здесь видны
+                    адрес, время последнего контакта и задержка обработки.
+                </p>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Ход проверки</h2>
+                <ul class="stages" id="stages">
+                    <li data-stage="capturing"><span class="mark"></span>Снимок с камеры поста</li>
+                    <li data-stage="recognizing"><span class="mark"></span>Поиск лица в базе</li>
+                    <li data-stage="awaiting_scan"><span class="mark"></span>Ожидание штрихкода груза</li>
+                    <li data-stage="done"><span class="mark"></span>Запись в журнал</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- ---------------------------------------------------- правая колонка -->
+        <div>
+            <div class="grid two">
+                <div class="frame" id="frame">кадр появится здесь</div>
+                <div class="verdict" id="verdict">
+                    <div class="who">Готов к работе</div>
+                    <div class="meta">Нажмите «Проверить»</div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Последние записи</h2>
+                <table>
+                    <thead>
+                        <tr><th>Время</th><th>Сотрудник</th><th>Груз</th><th>Пост</th></tr>
+                    </thead>
+                    <tbody id="recent"><tr><td colspan="4">—</td></tr></tbody>
+                </table>
+            </div>
+
+            <div class="panel" style="margin-top:20px">
+                <h2>Журнал событий</h2>
+                <div class="log" id="log"></div>
+            </div>
+        </div>
+
+    </div>
+</main>
+
+<div id="toasts"></div>
+<script src="/assets/api.js"></script>
+<script src="/assets/checkpoint.js"></script>
+</body>
+</html>

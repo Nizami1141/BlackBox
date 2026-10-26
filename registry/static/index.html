@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Device Registry</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f1115; --panel:#181b22; --line:#262a33; --mut:#9aa0a6; --fg:#e6e6e6; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; margin:0; padding:24px; background:var(--bg); color:var(--fg); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:13px; margin-bottom:16px; }
+  nav { display:flex; gap:8px; margin-bottom:20px; }
+  nav button, .btn { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:7px 14px; cursor:pointer; font-size:13px; text-decoration:none; }
+  nav button.active { background:#243044; border-color:#3b5378; }
+  .region { margin-bottom:24px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .region-head { display:flex; justify-content:space-between; padding:10px 16px; background:var(--panel); font-weight:600; }
+  .scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 16px; border-top:1px solid #232733; white-space:nowrap; }
+  th { color:var(--mut); font-weight:500; }
+  .badge { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .online { background:#12351f; color:#4ade80; }
+  .offline { background:#3a1414; color:#f87171; }
+  .never_seen { background:#2a2a1a; color:#facc15; }
+  .empty { padding:20px; color:var(--mut); text-align:center; }
+  a.dev { color:#7cb1ff; cursor:pointer; text-decoration:none; }
+  .err { color:#f87171; font-weight:600; }
+  .filters { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; align-items:center; }
+  .filters select, .filters input { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:13px; }
+  .filters input { min-width:200px; }
+  .filters label { font-size:13px; color:var(--mut); display:flex; gap:6px; align-items:center; }
+  .logs { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .logs table { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
+  .logs td { padding:5px 12px; }
+  .logs td.msg { white-space:pre-wrap; word-break:break-word; width:100%; }
+  .lvl { font-weight:700; text-transform:uppercase; font-size:11px; }
+  .lvl.debug { color:#8a93a3; } .lvl.info { color:#7cb1ff; } .lvl.warn { color:#facc15; } .lvl.error { color:#f87171; }
+  tr.row-error td { background:#2a1416; } tr.row-warn td { background:#28230f; }
+  .more { text-align:center; padding:10px; }
+  #admin-key { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:7px 10px; }
+</style>
+</head>
+<body>
+  <h1>ESP32 Device Registry</h1>
+  <div class="sub" id="summary">Загрузка…</div>
+  <nav>
+    <button id="tab-devices" class="active">Устройства</button>
+    <button id="tab-logs">Логи</button>
+    <input id="admin-key" type="password" placeholder="Ключ администратора (если задан)" autocomplete="off">
+  </nav>
+
+  <section id="view-devices"><div id="regions"></div></section>
+
+  <section id="view-logs" hidden>
+    <div class="filters">
+      <select id="f-region"><option value="">Все регионы</option></select>
+      <select id="f-device"><option value="">Все устройства</option></select>
+      <select id="f-level">
+        <option value="">Все уровни</option><option value="debug">debug+</option>
+        <option value="info">info+</option><option value="warn">warn+</option><option value="error">error</option>
+      </select>
+      <input id="f-q" type="search" placeholder="Поиск по тексту…">
+      <label><input type="checkbox" id="f-live" checked> Live</label>
+      <a class="btn" id="export" href="#">CSV</a>
+    </div>
+    <div class="logs scroll">
+      <table>
+        <thead><tr><th>Время</th><th>Регион</th><th>Устройство</th><th>Уровень</th><th>Uptime</th><th>Сообщение</th></tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+      <div class="empty" id="log-empty" hidden>Логов не найдено</div>
+    </div>
+    <div class="more"><button class="btn" id="load-more">Загрузить ещё</button></div>
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let devicesCache = [];
+const showError = e => { $('summary').textContent = `Ошибка реестра: ${e.message}`; };
+async function apiFetch(url) {
+  const key = $('admin-key').value.trim();
+  const response = await fetch(url, {headers: key ? {'X-Admin-Key': key} : {}});
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response;
+}
+$('admin-key').onchange = () => refreshDevices().catch(showError);
+
+// ---------- вкладки ----------
+function showTab(name) {
+  $('view-devices').hidden = name !== 'devices';
+  $('view-logs').hidden = name !== 'logs';
+  $('tab-devices').classList.toggle('active', name === 'devices');
+  $('tab-logs').classList.toggle('active', name === 'logs');
+  location.hash = name;
+  if (name === 'logs') loadLogs(true).catch(showError);
+}
+$('tab-devices').onclick = () => showTab('devices');
+$('tab-logs').onclick = () => showTab('logs');
+
+// ---------- устройства ----------
+async function refreshDevices() {
+  const [devicesRes, regionsRes] = await Promise.all([apiFetch('/api/v1/devices'), apiFetch('/api/v1/regions')]);
+  const devices = devicesCache = await devicesRes.json();
+  const regions = await regionsRes.json();
+
+  const totalOnline = regions.reduce((s, r) => s + r.online, 0);
+  const total = regions.reduce((s, r) => s + r.total, 0);
+  $('summary').textContent = `${total} устройств, ${totalOnline} онлайн, ${regions.length} регион(ов)`;
+  fillFilterOptions(devices);
+
+  const byRegion = {};
+  for (const d of devices) (byRegion[d.region] ||= []).push(d);
+
+  const container = $('regions');
+  container.innerHTML = '';
+  if (!devices.length) {
+    container.innerHTML = '<div class="empty">Пока ни одно устройство не зарегистрировано</div>';
+    return;
+  }
+  for (const region of Object.keys(byRegion).sort()) {
+    const list = byRegion[region];
+    const online = list.filter(d => d.status === 'online').length;
+    const el = document.createElement('div');
+    el.className = 'region';
+    el.innerHTML = `
+      <div class="region-head"><span>${esc(region)}</span><span>${online}/${list.length} онлайн</span></div>
+      <div class="scroll"><table>
+        <tr><th>Device ID</th><th>Имя</th><th>IP</th><th>Прошивка</th><th>Последняя связь</th><th>Логи</th><th>Ошибки 24ч</th><th>Статус</th></tr>
+        ${list.map(d => `
+          <tr>
+            <td><a class="dev" data-id="${esc(d.device_id)}">${esc(d.device_id)}</a></td>
+            <td>${esc(d.name) || '—'}</td>
+            <td>${esc(d.ip) || '—'}</td>
+            <td>${esc(d.fw_version) || '—'}</td>
+            <td>${d.last_seen ? new Date(d.last_seen).toLocaleString('ru-RU') : 'никогда'}</td>
+            <td>${d.log_count}</td>
+            <td class="${d.errors_24h ? 'err' : ''}">${d.errors_24h}</td>
+            <td><span class="badge ${esc(d.status)}">${esc(d.status)}</span></td>
+          </tr>`).join('')}
+      </table></div>`;
+    container.appendChild(el);
+  }
+  container.querySelectorAll('a.dev').forEach(a => a.onclick = () => {
+    $('f-region').value = ''; $('f-device').value = a.dataset.id; showTab('logs');
+  });
+}
+
+// ---------- логи ----------
+function fillFilterOptions(devices) {
+  const fill = (sel, values, label) => {
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${label}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = values.includes(cur) ? cur : '';
+  };
+  fill($('f-region'), [...new Set(devices.map(d => d.region))].sort(), 'Все регионы');
+  fill($('f-device'), devices.map(d => d.device_id).sort(), 'Все устройства');
+}
+
+function params(extra = {}) {
+  const p = new URLSearchParams();
+  for (const [k, id] of [['region','f-region'],['device_id','f-device'],['level','f-level'],['q','f-q']])
+    if ($(id).value) p.set(k, $(id).value);
+  for (const [k, v] of Object.entries(extra)) p.set(k, v);
+  return p;
+}
+
+function rowHtml(l) {
+  const up = l.uptime_ms == null ? '—' : (l.uptime_ms / 1000).toFixed(1) + 'с';
+  return `<tr class="row-${esc(l.level)}" data-id="${l.id}">
+    <td>${new Date(l.received_at).toLocaleString('ru-RU')}</td><td>${esc(l.region)}</td><td>${esc(l.device_id)}</td>
+    <td><span class="lvl ${esc(l.level)}">${esc(l.level)}</span></td><td>${up}</td><td class="msg">${esc(l.message)}</td></tr>`;
+}
+
+let newestId = 0, oldestId = 0;
+async function loadLogs(reset) {
+  if (reset) { $('log-body').innerHTML = ''; newestId = oldestId = 0; }
+  const res = await apiFetch('/api/v1/logs?' + params({ limit: 200 }));
+  const logs = await res.json();
+  $('log-body').innerHTML = logs.map(rowHtml).join('');
+  $('log-empty').hidden = logs.length > 0;
+  newestId = logs.length ? logs[0].id : 0;
+  oldestId = logs.length ? logs[logs.length - 1].id : 0;
+  $('load-more').hidden = logs.length < 200;
+  $('export').href = '/api/v1/logs/export.csv?' + params();
+}
+
+async function pollNew() {
+  if ($('view-logs').hidden || !$('f-live').checked || !newestId) return loadIfEmpty();
+  const res = await apiFetch('/api/v1/logs?' + params({ after_id: newestId, limit: 200 }));
+  const logs = await res.json();
+  if (!logs.length) return;
+  newestId = logs[0].id;
+  $('log-body').insertAdjacentHTML('afterbegin', logs.map(rowHtml).join(''));
+  $('log-empty').hidden = true;
+}
+function loadIfEmpty() { if (!$('view-logs').hidden && $('f-live').checked && !newestId) loadLogs(true); }
+
+$('load-more').onclick = async () => {
+  const res = await apiFetch('/api/v1/logs?' + params({ before_id: oldestId, limit: 200 }));
+  const logs = await res.json();
+  if (logs.length) { $('log-body').insertAdjacentHTML('beforeend', logs.map(rowHtml).join('')); oldestId = logs[logs.length - 1].id; }
+  $('load-more').hidden = logs.length < 200;
+};
+for (const id of ['f-region','f-device','f-level']) $(id).onchange = () => loadLogs(true);
+let qTimer; $('f-q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(() => loadLogs(true), 300); };
+
+$('export').onclick = async event => {
+  event.preventDefault();
+  try {
+    const response = await apiFetch($('export').href);
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url; link.download = 'device_logs.csv'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { showError(error); }
+};
+refreshDevices().then(() => showTab(location.hash === '#logs' ? 'logs' : 'devices')).catch(showError);
+setInterval(() => refreshDevices().catch(showError), 5000);
+setInterval(() => pollNew().catch(showError), 3000);
+</script>
+</body>
+</html>

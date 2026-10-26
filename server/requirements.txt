@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+#  Зависимости сервера. Ставить в виртуальное окружение:
+#     python -m venv .venv
+#     .venv\Scripts\activate          (Windows)
+#     pip install -r requirements.txt
+# ---------------------------------------------------------------------------
+
+# --- веб ---
+fastapi>=0.110
+uvicorn[standard]>=0.27      # включает websockets — они нужны и сайту, и постам
+python-multipart>=0.0.9      # без этого FastAPI не примет загрузку файлов
+pyyaml>=6.0
+pydantic>=2,<3             # Device Registry and main API
+httpx>=0.27                # пересылка JPEG/штрихкода на центральный AKS
+
+# --- зрение ---
+numpy>=1.24
+opencv-contrib-python>=4.9   # нужен всегда: чтение JPEG, ресайз, превью
+
+# --- бэкенд распознавания (face.backend: insightface) ---
+# buffalo_l = SCRFD + ArcFace, 512-d. Всё считается локально, наружу
+# ничего не уходит. Первый запуск скачает ~300 МБ в models/.
+insightface>=0.7.3
+onnxruntime>=1.17            # CPU. Для NVIDIA-карты: onnxruntime-gpu
+
+# --- транспорт до платы ---
+bleak>=0.21                  # Bluetooth LE, кроссплатформенный
+
+# --- тесты (не нужны для работы) ---
+# pytest>=8.0
