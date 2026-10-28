@@ -35,6 +35,10 @@ void begin(int pin, bool activeLow = true);
 // После begin/discardPending требуется стабильное отпускание 150 мс.
 bool pressed();
 
+// Checkpoint start: one event after a stable press, without waiting for release.
+// A held input at boot or after a finished check never starts a new check.
+bool startPressed();
+
 // Discard clicks queued during a finished/canceled check. A held button
 // must be released and pressed again before another check can start.
 void discardPending();

@@ -412,7 +412,7 @@ void setup() {
     logf("\n\n=== Пост \"%s\": транспорт не выбран ===\n", CHECKPOINT_DEVICE_ID);
 #endif
     logf("[boot] сборка %s %s\n", __DATE__, __TIME__);
-    logf("[boot] версия prototype-5mp-q8-scan15-sites-button-net-2026-10-26; GPIO restart handler removed\n");
+    logf("[boot] версия prototype-5mp-button-start-reboot5-2026-10-28; filtered five-click restart\n");
     printResetReason();
 
     // PSRAM обязательна. Если здесь 0 — почти наверняка неверный тип памяти

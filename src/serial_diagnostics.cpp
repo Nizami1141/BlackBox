@@ -18,8 +18,6 @@
 namespace {
 constexpr uint32_t REPORT_MS = 10000;
 bool g_buttonDown = false;
-uint32_t g_buttonDownSince = 0;
-bool g_buttonHoldReported = false;
 GM67 *g_scanner = nullptr;
 Stream *g_outputs[2] = {};
 bool g_ready = false;
@@ -256,8 +254,6 @@ void ready() {
     g_ready = true;
 #if ENABLE_BUTTON
     g_buttonDown = btn::isDown();
-    g_buttonDownSince = millis();
-    g_buttonHoldReported = false;
 #endif
     stage("idle");
     report();
@@ -270,14 +266,8 @@ void tick() {
     const bool down = btn::isDown();
     if (down != g_buttonDown) {
         g_buttonDown = down;
-        g_buttonDownSince = millis();
-        g_buttonHoldReported = false;
         line("[diag] BUTTON GPIO%d edge=%s; raw=%s\n", BUTTON_PIN,
              down ? "DOWN" : "UP", btn::rawLevel() == 0 ? "LOW" : "HIGH");
-    }
-    if (down && !g_buttonHoldReported && millis() - g_buttonDownSince >= 2000) {
-        g_buttonHoldReported = true;
-        event("BUTTON", "held DOWN >=2s; release will not start a check; if untouched, inspect GPIO wiring");
     }
 #endif
     commands(0);

@@ -191,7 +191,7 @@ int main() {
     uart.clear(); usb.clear();
     nowMs += 2000;
     diagnostics::tick();
-    assert(uart.has("held DOWN >=2s"));
+    assert(!uart.has("held DOWN")); // Holding no longer produces a release prompt.
     assert(buttonClicks == 1 && uart.output == usb.output);
     uart.clear(); usb.clear();
     ++nowMs;

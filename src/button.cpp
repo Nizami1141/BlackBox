@@ -13,6 +13,7 @@ bool     g_raw = false;
 uint32_t g_changedMs = 0;
 uint32_t g_downMs = 0;
 bool     g_shortPending = false;
+bool     g_startPending = false;
 bool     g_longFired = false;
 bool     g_armed = false;
 bool     g_validPress = false;
@@ -45,6 +46,7 @@ void update() {
         g_downMs = now;
         g_longFired = false;
         g_validPress = g_armed;
+        g_startPending = g_validPress;
         g_armed = false;
     } else {
         // Отпустили. Короткое нажатие засчитываем только если длинное
@@ -71,6 +73,7 @@ void begin(int pin, bool activeLow) {
     g_changedMs = millis();
     g_downMs = g_changedMs;
     g_shortPending = false;
+    g_startPending = false;
     g_longFired = false;
     g_armed = false;
     g_validPress = false;
@@ -81,6 +84,18 @@ bool pressed() {
     update();
     if (!g_shortPending) return false;
     g_shortPending = false;
+    g_startPending = false;
+    return true;
+}
+
+bool startPressed() {
+    update();
+    if (!g_startPending) return false;
+    g_startPending = false;
+    g_shortPending = false;
+    // This physical press has started a check. Its release cannot create
+    // another click, and holding it cannot cancel the later barcode window.
+    g_validPress = false;
     return true;
 }
 
@@ -89,6 +104,7 @@ void discardPending() {
     g_raw = g_stable = readRaw();
     g_changedMs = g_downMs = millis();
     g_shortPending = false;
+    g_startPending = false;
     g_longFired = g_stable; // Ignore the release of an already held button.
     g_armed = false;
     g_validPress = false;
@@ -99,6 +115,7 @@ bool longPressed() {
     if (!g_stable || !g_validPress || g_longFired) return false;
     if (millis() - g_downMs < LONG_MS) return false;
     g_longFired = true;
+    g_startPending = false;
     return true;
 }
 

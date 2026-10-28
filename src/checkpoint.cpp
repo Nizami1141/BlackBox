@@ -5,6 +5,7 @@
 #if ENABLE_ETH
 
 #include "button.h"
+#include "button_reboot.h"
 #include "camera.h"
 #include "eth_link.h"
 #include "gm67.h"
@@ -540,6 +541,9 @@ void begin(GM67 *scanner) {
 #else
     Serial.println("[cp] покой: камера и сканер остановлены");
 #endif
+#if ENABLE_BUTTON
+    button_reboot::begin(BUTTON_PIN);
+#endif
 }
 
 void loop() {
@@ -607,7 +611,7 @@ void loop() {
 
     bool buttonRequested = false;
 #if ENABLE_BUTTON
-    buttonRequested = btn::pressed();
+    buttonRequested = btn::startPressed();
 #endif
     bool remoteRequested = false;
     if (!buttonRequested && millis() - lastRemotePoll >= 2000) {

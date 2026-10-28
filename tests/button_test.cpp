@@ -173,5 +173,47 @@ int main() {
     click();
     assert(events == 1);
 
-    std::cout << "Button polling: clicks/noise/idle-long/boot-held/rearm/busy-discard/polarity/wraparound passed\n";
+    // Checkpoint starts on the FIRST debounced press, before any release.
+    reset();
+    level = LOW;
+    assert(!btn::startPressed());
+    nowMs += 35;
+    (void)btn::isDown(); // Diagnostics can observe the edge first.
+    assert(btn::startPressed());
+    assert(!btn::startPressed());
+    nowMs += 5000;
+    assert(!btn::startPressed());
+    assert(!btn::longPressed()); // The start hold is not barcode cancellation.
+    level = HIGH;
+    assert(!btn::startPressed());
+    nowMs += 35;
+    assert(!btn::startPressed() && !btn::pressed());
+    nowMs += 150;
+    assert(btn::armed());
+    level = LOW;
+    assert(!btn::startPressed());
+    nowMs += 35;
+    assert(btn::startPressed()); // Next physical press is accepted once.
+
+    // No restart on release after a check completes while still held.
+    btn::discardPending();
+    nowMs += 5000;
+    assert(!btn::startPressed());
+    level = HIGH;
+    assert(!btn::startPressed());
+    nowMs += 35;
+    assert(!btn::startPressed());
+    nowMs += 150;
+    assert(btn::armed());
+
+    // Boot-held and sub-debounce noise never start a check.
+    reset(LOW);
+    nowMs += 5000;
+    assert(!btn::startPressed());
+    reset();
+    for (unsigned i = 0; i < 50; ++i) {
+        level = LOW; nowMs += 5; assert(!btn::startPressed());
+        level = HIGH; nowMs += 5; assert(!btn::startPressed());
+    }
+    std::cout << "Button polling: release clicks and immediate checkpoint start/hold/noise/rearm passed\n";
 }
