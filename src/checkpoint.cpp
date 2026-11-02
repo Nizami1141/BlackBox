@@ -367,6 +367,9 @@ void runCheck() {
     diagnostics::serverResult("recognize", v.ok, v.httpCode);
 
     if (!v.ok) {
+        // The selected monitor may be the alternate USB port; Serial alone
+        // does not reach it. Forward the validation/transport reason to both.
+        diagnostics::event("recognize-error", v.error.c_str());
         eth::registryLog("error", "Recognition request failed");
         Serial.printf("[cp] проверка не завершена (HTTP %d): %s\n",
                       v.httpCode, v.error.c_str());

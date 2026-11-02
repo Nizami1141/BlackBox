@@ -355,6 +355,8 @@ void runCheck() {
     free(jpg);                      // кадр больше не нужен, PSRAM освобождаем сразу
 
     if (!v.ok) {
+        // This legacy target has no serial_diagnostics module.
+        Serial.printf("[diag] recognize-error: %s\n", v.error.c_str());
         eth::registryLog("error", "Recognition request failed");
         Serial.printf("[cp] проверка не завершена (HTTP %d): %s\n",
                       v.httpCode, v.error.c_str());

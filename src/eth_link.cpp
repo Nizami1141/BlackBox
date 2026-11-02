@@ -4,6 +4,7 @@
 #if ENABLE_ETH
 
 #include <ArduinoJson.h>
+#include "aks_face_selection.h"
 #include <Ethernet.h>
 #include <Dns.h>
 #if ETH_SERVER_TLS
@@ -516,38 +517,21 @@ VerifyResult verify(const uint8_t *jpeg, size_t len) {
         return r;
     }
     JsonArray faces = doc["faces"].as<JsonArray>();
-    // The live AKS returns HTTP 200 with faces:[] when no face is detected.
-    // Accept that denial, but never accept multiple faces or a malformed match.
-    if (faces.isNull()) {
-        recognitionError(r, body, "неверный ответ распознавания: faces отсутствует или не массив");
+    const aks::FaceSelection selected = aks::selectFace(faces);
+    if (selected.error) {
+        recognitionError(r, body, selected.error);
         return r;
     }
-    if (faces.size() > 1) {
-        recognitionError(r, body, "сервер вернул несколько лиц: " + String(faces.size()) +
-                         "; для прохода требуется одно лицо");
-        return r;
-    }
-    if (faces.size() == 1 && !faces[0].is<JsonObject>()) {
-        recognitionError(r, body, "неверный ответ распознавания: faces[0] не объект");
-        return r;
-    }
-    if (faces.size() == 1 && !faces[0]["match"].is<bool>()) {
-        recognitionError(r, body, "неверный ответ распознавания: match отсутствует или не true/false");
-        return r;
-    }
-    if (faces[0]["match"].as<bool>() &&
-        (!faces[0]["log_id"].is<int>() || faces[0]["log_id"].as<int>() <= 0)) {
-        recognitionError(r, body, "сервер не выдал действительный log_id");
-        return r;
-    }
+    logf_("[eth] AKS faces=%u; matched=%u; selected_log_id=%d\n",
+          (unsigned)faces.size(), selected.matches, selected.face["log_id"] | 0);
     r.ok = true;
     if (faces.size() > 0) {
-        JsonObject f0 = faces[0];
+        JsonObjectConst f0 = selected.face;
         r.matched = f0["match"] | false;
         r.logId   = f0["log_id"] | 0;
         r.token   = String(r.logId);
         r.expiresIn = f0["expires_in"] | 90;
-        r.score = f0["score"] | 0.0f;
+        r.score = selected.similarity >= 0 ? selected.similarity : 0.0f;
 
         if (r.matched) {
             String fn = f0["user"]["first_name"] | "";
