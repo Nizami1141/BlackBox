@@ -620,10 +620,10 @@
 #define ETH_BAKU_GATEWAY  {172, 16, 0, 1}
 #define ETH_BAKU_SUBNET   {255, 255, 0, 0}
 #define ETH_BAKU_DNS      ETH_SHARED_DNS
-#define ETH_TOVUZ_IP      {172, 20, 204, 193}
+#define ETH_TOVUZ_IP      {172, 20, 142, 53}
 #define ETH_TOVUZ_GATEWAY {172, 20, 204, 1}
 #define ETH_TOVUZ_SUBNET  {255, 255, 255, 0}
-#define ETH_TOVUZ_DNS     ETH_SHARED_DNS
+#define ETH_TOVUZ_DNS     {192, 169, 250, 248}
 #if ETH_SITE != ETH_SITE_CURRENT && ETH_SITE != ETH_SITE_BAKU && ETH_SITE != ETH_SITE_TOVUZ
   #error "Unknown ETH_SITE: use CURRENT=0, BAKU=1 or TOVUZ=2."
 #endif
