@@ -559,6 +559,58 @@ VerifyResult verify(const uint8_t *jpeg, size_t len) {
     return r;
 }
 
+ScanResult registerPerson(const String &qrData, const uint8_t *jpeg, size_t len) {
+    ScanResult r;
+    if (!qrData.length() || !jpeg || !len) {
+        r.error = "registration requires QR data and a fresh photo";
+        return r;
+    }
+    if (!linkUp()) {
+        r.error = "Ethernet link unavailable";
+        return r;
+    }
+    ApiConnection connection;
+    Client &c = connection.client;
+    if (!connection.connect()) {
+        r.error = connection.error;
+        return r;
+    }
+    String head = String("--") + BOUNDARY + "\r\n"
+        "Content-Disposition: form-data; name=\"qr_data\"\r\n\r\n" + qrData +
+        "\r\n--" + BOUNDARY + "\r\n"
+        "Content-Disposition: form-data; name=\"file\"; filename=\"face.jpg\"\r\n"
+        "Content-Type: image/jpeg\r\n\r\n";
+    String tail = String("\r\n--") + BOUNDARY + "--\r\n";
+    String ct = String("multipart/form-data; boundary=") + BOUNDARY;
+    if (!sendHeaders(c, "/api/esp/register", ct.c_str(), head.length() + len + tail.length()) ||
+        !writeAll(c, head) || !writeAll(c, jpeg, len) || !writeAll(c, tail)) {
+        c.stop();
+        r.error = "registration upload interrupted; check AKS before retrying";
+        return r;
+    }
+    String body;
+    const bool received = readResponse(c, r.httpCode, body, HTTP_TIMEOUT_MS, "/api/esp/register");
+    c.stop();
+    if (!received) {
+        r.error = "registration response incomplete; check AKS before retrying";
+        return r;
+    }
+    if (r.httpCode != 200) {
+        r.error = httpError(r.httpCode, body);
+        return r;
+    }
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) {
+        r.error = "invalid registration JSON; check AKS before retrying";
+        return r;
+    }
+    r.ok = doc["status"] == "success";
+    r.reason = responseReason(body);
+    r.lcd1 = r.ok ? "Qeydiyyat OK" : "Qeydiyyat xetasi";
+    r.lcd2 = r.ok ? "Tamamlandi" : "AKS yoxlayin";
+    return r;
+}
+
 // ------------------------------------------------------------------ scan ---
 ScanResult scan(const String &token, const String &barcode) {
     ScanResult r;

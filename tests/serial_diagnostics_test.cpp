@@ -18,6 +18,7 @@ bool buttonDown = false;
 unsigned buttonClicks = 1;
 unsigned probes = 0;
 unsigned lcdChecks = 0;
+unsigned registrations = 0;
 HardwareSerial scannerPort;
 
 class Terminal : public Stream {
@@ -55,6 +56,7 @@ uint32_t errors() { return lcdAck ? 0 : 1; }
 }
 namespace checkpoint {
 bool diagnoseLCD() { ++lcdChecks; return lcdReady; }
+bool requestRegistration() { ++registrations; return true; }
 }
 namespace eth {
 bool hardwareResponding() { return spiOk; }
@@ -80,6 +82,18 @@ int main() {
     assert(uart.has("init=OK; state=OFF")); // OFF in idle is not a camera failure.
     assert(uart.has("evidence=NOT_CONFIRMED")); // Open UART is not scanner proof.
     assert(uart.has("queued=12"));
+    uart.input = "REGISTER\n";
+    uart.cursor = 0;
+    diagnostics::tick();
+    assert(registrations == 1 && uart.has("REGISTER QUEUED"));
+    diagnostics::startCheck(1);
+    uart.input = "REGISTER\n";
+    uart.cursor = 0;
+    diagnostics::tick();
+    assert(registrations == 1 && uart.has("REGISTER BUSY"));
+    diagnostics::finishCheck("TEST");
+    uart.input.clear();
+    uart.cursor = 0;
     assert(uart.has("SPI_VERSION=OK(0x04)"));
     assert(uart.has("health=TCP/TLS only"));
     assert(scannerPort.reads == 0 && scannerPort.queued == 12);

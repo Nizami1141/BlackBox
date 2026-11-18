@@ -318,7 +318,8 @@ bool GM67::poll(String &out, uint32_t interCharTimeoutMs) {
         }
         // Отбрасываем управляющие байты: в сыром режиме их быть не должно,
         // но при неудачной конфигурации сюда может прилететь хвост SSI-пакета.
-        if (c >= 0x20 && c < 0x7F) {
+        // Preserve UTF-8 bytes in registration QR names (AKS v2).
+        if (c >= 0x20 && c != 0x7F) {
             _acc += (char)c;
             if (_acc.length() > 256) _acc = "";   // защита от мусора
         } else {

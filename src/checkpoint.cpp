@@ -26,6 +26,7 @@ uint32_t g_lastHeartbeat = 0;
 constexpr uint32_t HEARTBEAT_MS = 3000;
 bool     g_backlightOn = true;
 bool     g_barcodeCanceled = false;
+bool     g_registrationPending = false;
 
 void heartbeatIfDue() {
     const uint32_t now = millis();
@@ -262,7 +263,7 @@ void toIdle() {
 }
 
 // ------------------------------------------------------------ один проход
-void runCheck() {
+void runCheck(bool registration = false) {
     g_checks++;
     diagnostics::startCheck(g_checks);
     eth::registryLog("info", "Verification started");
@@ -310,6 +311,22 @@ void runCheck() {
         return;
     }
 
+    String qrData;
+    if (registration) {
+        diagnostics::stage("registration-wait-qr");
+        show("Qeydiyyat", "QR skan edin");
+        qrData = waitBarcode(GM67_SCAN_WINDOW_MS);
+        if (!qrData.length()) {
+            diagnostics::finishCheck(g_barcodeCanceled ? "CANCELED" : "REGISTRATION_QR_TIMEOUT");
+            toIdle();
+            showIdle();
+            return;
+        }
+        show(LCD_WAIT_1, LCD_WAIT_2);
+        // Let the person face the camera after presenting the registration QR.
+        delay(2000);
+    }
+
     // === ЭТАП 3: камера =====================================================
     diagnostics::stage("camera-capture");
     size_t len = 0;
@@ -349,6 +366,19 @@ void runCheck() {
     // === ЭТАП 4: отправка кадра и ожидание ответа ===========================
     show(LCD_SEARCH_1, LCD_SEARCH_2);
     diagnostics::stage("camera-to-aks-recognize");
+    if (registration) {
+        diagnostics::stage("camera-to-aks-register");
+        // Enrollment changes server state; never automatically retry it.
+        eth::ScanResult result = eth::registerPerson(qrData, jpg, len);
+        free(jpg);
+        diagnostics::serverResult("register", result.ok, result.httpCode);
+        diagnostics::event("REGISTER", result.error.length() ? result.error.c_str() : result.reason.c_str());
+        showFor(pick(result.lcd1, "Qeydiyyat xetasi"),
+                pick(result.lcd2, "AKS yoxlayin"), LCD_HOLD_MS);
+        diagnostics::finishCheck(result.ok ? "REGISTERED" : "REGISTRATION_ERROR");
+        toIdle();
+        return;
+    }
     eth::VerifyResult v = eth::verify(jpg, len);
 
     // Одна повторная попытка при СЕТЕВОМ сбое. Зачем: на стенде линк может
@@ -475,6 +505,16 @@ void runCheck() {
 
 namespace checkpoint {
 
+bool requestRegistration() {
+#if ETH_DIRECT_AKS
+    if (g_registrationPending) return false;
+    g_registrationPending = true;
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool diagnoseLCD() {
 #if ENABLE_LCD
     const bool found = lcd::diagnose();
@@ -551,6 +591,11 @@ void begin(GM67 *scanner) {
 
 void loop() {
     diagnostics::tick();
+    if (g_registrationPending) {
+        g_registrationPending = false;
+        runCheck(true);
+        return;
+    }
     static uint32_t lastRemotePoll = 0;
     // ------------------------------------------------------- подсветка ----
     // Гасим не сразу после проверки, а спустя LCD_BACKLIGHT_OFF_MS: вердикт

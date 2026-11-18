@@ -55,5 +55,7 @@ void loop();
 
 // Called on the checkpoint task while idle; no verification or API request.
 bool diagnoseLCD();
+// Queue one explicit enrollment while idle, available only in direct AKS mode.
+bool requestRegistration();
 
 }  // namespace checkpoint

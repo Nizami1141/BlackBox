@@ -54,4 +54,7 @@ VerifyResult verify(const uint8_t *jpeg, size_t len);
 // Отправка штрихкода на /api/log_cargo (multipart/form-data)
 ScanResult scan(const String &token, const String &barcode);
 
+// Optional AKS v2 enrollment: QR text and a freshly captured JPEG.
+ScanResult registerPerson(const String &qrData, const uint8_t *jpeg, size_t len);
+
 }  // namespace eth

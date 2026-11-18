@@ -80,8 +80,15 @@ void commands(unsigned index) {
                     line("[diag] LCDCHECK END result=%s\n", found ? "READY" : "NOT_READY");
                     diagnostics::report();
                 }
+            } else if (!strcmp(command.text, "REGISTER")) {
+                if (g_checkActive) {
+                    line("[diag] REGISTER BUSY: wait until current operation ends\n");
+                } else {
+                    const bool queued = checkpoint::requestRegistration();
+                    line("[diag] REGISTER %s\n", queued ? "QUEUED: scan the person's registration QR, then face the camera" : "UNAVAILABLE: requires direct AKS mode and no pending registration");
+                }
             } else if (!strcmp(command.text, "HELP")) {
-                line("[diag] STATUS = report; LCDCHECK = recheck LCD while idle; HELP = commands; send with Enter\n");
+                line("[diag] STATUS = report; LCDCHECK = LCD test; REGISTER = enroll a NEW person via QR and photo (AKS v2); HELP = commands; send with Enter\n");
             } else if (command.length) {
                 line("[diag] unknown command; use HELP\n");
             }
